@@ -27,3 +27,12 @@ dev-dist
 html
 meta*.json
 .claude
+
+# --- Local-app (our Tauri desktop app additions) ---
+local-app/src-tauri/target/
+local-app/node_modules/
+local-app/dist/
+local-app/src-tauri/gen/
+# SQLite runtime files (the .db itself is kept for portability)
+*.db-shm
+*.db-wal

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Excalidraw Local</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no"
+    />
+    <meta name="referrer" content="origin" />
+
+    <!-- Tell Excalidraw where to find font assets (dev: same origin as the dev server) -->
+    <script>
+      window.EXCALIDRAW_ASSET_PATH = window.origin;
+    </script>
+
+    <!-- minimise white flash when dark mode is on -->
+    <script>
+      try {
+        const theme = window.localStorage.getItem("excalidraw-theme");
+        const isDark =
+          theme === "dark" ||
+          (theme === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (isDark) document.documentElement.classList.add("dark");
+      } catch (e) {
+        console.error("Error setting dark mode", e);
+      }
+    </script>
+    <style>
+      html.dark {
+        background-color: #121212;
+        color: #fff;
+      }
+      body,
+      html {
+        margin: 0;
+        -webkit-text-size-adjust: 100%;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #root {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
