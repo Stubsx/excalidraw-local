@@ -32,6 +32,7 @@ meta*.json
 local-app/src-tauri/target/
 local-app/node_modules/
 local-app/dist/
+local-app/dist-release/
 local-app/src-tauri/gen/
 # SQLite runtime files (the .db itself is kept for portability)
 *.db-shm
