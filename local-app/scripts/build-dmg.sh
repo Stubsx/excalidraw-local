@@ -32,6 +32,10 @@ STAGE_DIR="$APP_DIR/dist-release"
 CARGO_TOML="$APP_DIR/src-tauri/Cargo.toml"
 TAURI_CONF="$APP_DIR/src-tauri/tauri.conf.json"
 
+# PID lockfile — post-commit hook reads this + kill -0 to dedup concurrent
+# builds (rapid commits would otherwise stack multi-minute Tauri builds).
+LOCKFILE="$STAGE_DIR/.build.lock"
+
 # --- color helpers -----------------------------------------------------------
 if [[ -t 1 ]]; then
   BOLD=$'\033[1m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
@@ -71,11 +75,18 @@ write_version() {
 # version stamp is a build-time concern, not a commit-time one.
 ORIG_CARGO="$(cat "$CARGO_TOML")"
 ORIG_TAURI="$(cat "$TAURI_CONF")"
-restore_version_files() {
+
+# Acquire the dedup lockfile: write our PID so the post-commit hook can
+# kill -0 it and skip overlapping builds.
+mkdir -p "$STAGE_DIR"
+echo "$$" > "$LOCKFILE"
+
+cleanup() {
   printf '%s' "$ORIG_CARGO" > "$CARGO_TOML"
   printf '%s' "$ORIG_TAURI" > "$TAURI_CONF"
+  rm -f "$LOCKFILE"
 }
-trap restore_version_files EXIT
+trap cleanup EXIT
 
 write_version
 ok "version set"
