@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 import { exportToBlob } from "@excalidraw/utils/export";
@@ -10,7 +10,7 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import type { ExcalidrawElement } from "@excalidraw/element/types";
+import type { ExcalidrawElement, Theme } from "@excalidraw/element/types";
 
 import {
   saveEditorState,
@@ -38,6 +38,8 @@ interface EditorPaneProps {
   scene: SavedScene | null;
   onApiReady: (api: ExcalidrawImperativeAPI | null) => void;
   onChange: () => void;
+  /** Editor theme changes are forwarded up so the chrome can follow. */
+  onThemeChange: (theme: Theme | "system") => void;
 }
 
 /**
@@ -50,7 +52,10 @@ interface EditorPaneProps {
  * Only the active tab's EditorPane is mounted by the parent; switching tabs
  * unmounts it (data is already persisted, so reloading is lossless).
  */
-export function EditorPane({ kind, refId, scene, onApiReady, onChange }: EditorPaneProps) {
+// memoized: parent re-renders (dirty marking, sidebar refresh) must NOT
+// re-render the Excalidraw subtree — each such re-render churns the
+// tunnel-rat stores and feeds back into onChange (see tabs.ts markDirty).
+export const EditorPane = memo(function EditorPane({ kind, refId, scene, onApiReady, onChange, onThemeChange }: EditorPaneProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [initialData, setInitialData] = useState<
     Promise<ExcalidrawInitialDataState> | null
@@ -143,7 +148,17 @@ export function EditorPane({ kind, refId, scene, onApiReady, onChange }: EditorP
   // effect needed — onExcalidrawAPI fires once on mount with the live API).
 
   if (!initialData) {
-    return <div style={{ padding: "24px", color: "#888" }}>加载中…</div>;
+    return (
+      <div
+        style={{
+          padding: "24px",
+          fontFamily: "var(--ui-font)",
+          color: "var(--color-gray-60)",
+        }}
+      >
+        加载中…
+      </div>
+    );
   }
 
   return (
@@ -154,9 +169,10 @@ export function EditorPane({ kind, refId, scene, onApiReady, onChange }: EditorP
         onApiReady(api);
       }}
       onChange={handleChange}
+      onThemeChange={onThemeChange}
     />
   );
-}
+});
 
 function blobToDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

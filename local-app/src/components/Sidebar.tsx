@@ -8,7 +8,19 @@ import {
   toggleStarred,
 } from "../db/sceneStore";
 import { listExcalidrawFiles, pathExists, type FolderEntry } from "../folderStore";
-import { sidebarStyle } from "../styles";
+import { sidebarStyle, COLORS } from "../styles";
+import {
+  PlusIcon,
+  ImageIcon,
+  TrashIcon,
+  searchIcon,
+  file as FileIcon,
+  LibraryIcon,
+  FolderIcon,
+  StarIcon,
+  StarFilledIcon,
+  SettingsIcon,
+} from "../icons";
 
 type View = "library" | "folder";
 
@@ -16,6 +28,8 @@ interface SidebarProps {
   onOpenScene: (sceneId: string) => void;
   onOpenFile: (path: string, name: string) => void;
   onNew: () => void;
+  /** Open the settings panel (CLI install etc.). */
+  onOpenSettings: () => void;
   /** Currently-open tab ids (kind:ref encoded) to highlight open tabs. */
   openTabIds: Set<string>;
   refreshKey: number;
@@ -33,6 +47,7 @@ export function Sidebar({
   onOpenScene,
   onOpenFile,
   onNew,
+  onOpenSettings,
   openTabIds,
   refreshKey,
 }: SidebarProps) {
@@ -89,56 +104,63 @@ export function Sidebar({
 
   return (
     <div className="excal-sidebar" style={sidebarStyle.container}>
-      {/* View switcher */}
+      {/* View switcher — segmented control, mirrors sidebar-tab-trigger */}
       <div style={sidebarStyle.viewSwitch}>
         <button
-          style={{
-            ...sidebarStyle.viewBtn,
-            ...(view === "library" ? sidebarStyle.viewBtnActive : null),
-          }}
+          className={`excal-btn${view === "library" ? " excal-btn--active" : ""}`}
           onClick={() => setView("library")}
+          style={{ flex: 1, gap: "0.3rem" }}
         >
+          <LibraryIcon />
           资料库
         </button>
         <button
-          style={{
-            ...sidebarStyle.viewBtn,
-            ...(view === "folder" ? sidebarStyle.viewBtnActive : null),
-          }}
+          className={`excal-btn${view === "folder" ? " excal-btn--active" : ""}`}
           onClick={() => setView("folder")}
+          style={{ flex: 1, gap: "0.3rem" }}
         >
+          <FolderIcon />
           文件夹
         </button>
       </div>
 
       <div style={sidebarStyle.header}>
         <input
-          style={sidebarStyle.search}
+          className="excal-input"
+          style={{ flex: 1 }}
           placeholder={view === "library" ? "搜索资料库…" : "搜索文件…"}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         {view === "library" && (
           <button
-            style={{
-              ...sidebarStyle.iconBtn,
-              backgroundColor: starredOnly ? "#ffd43b" : "transparent",
-            }}
+            className={`excal-btn excal-btn--icon${
+              starredOnly ? " excal-btn--active" : " excal-btn--ghost"
+            }`}
             title="只看收藏"
             onClick={() => setStarredOnly((s) => !s)}
           >
-            {starredOnly ? "★" : "☆"}
+            {starredOnly ? <StarFilledIcon /> : <StarIcon />}
           </button>
         )}
-        <button style={sidebarStyle.newBtn} title="新建" onClick={onNew}>
-          +
+        <button
+          className="excal-btn excal-btn--icon excal-btn--primary"
+          title="新建"
+          onClick={onNew}
+        >
+          <PlusIcon />
         </button>
       </div>
 
       {view === "folder" && (
         <div style={sidebarStyle.folderBar}>
-          <button style={sidebarStyle.folderBtn} onClick={pickFolder}>
-            📂 打开文件夹
+          <button
+            className="excal-btn"
+            style={{ gap: "0.3rem" }}
+            onClick={pickFolder}
+          >
+            <FolderIcon />
+            打开文件夹
           </button>
           {folderPath && (
             <div style={sidebarStyle.folderPath} title={folderPath}>
@@ -174,17 +196,18 @@ export function Sidebar({
                 actions={
                   <>
                     <button
-                      style={sidebarStyle.starBtn}
+                      className="excal-btn excal-btn--icon excal-btn--ghost"
                       title={item.starred ? "取消收藏" : "收藏"}
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleStarred(item.id).then(reloadLibrary);
                       }}
+                      style={{ color: item.starred ? COLORS.star : undefined }}
                     >
-                      {item.starred ? "★" : "☆"}
+                      {item.starred ? <StarFilledIcon /> : <StarIcon />}
                     </button>
                     <button
-                      style={sidebarStyle.delBtn}
+                      className="excal-btn excal-btn--icon excal-btn--ghost"
                       title="删除"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -192,8 +215,9 @@ export function Sidebar({
                           deleteScene(item.id).then(reloadLibrary);
                         }
                       }}
+                      style={{ color: COLORS.danger }}
                     >
-                      ×
+                      <TrashIcon />
                     </button>
                   </>
                 }
@@ -209,13 +233,25 @@ export function Sidebar({
                 key={entry.path}
                 active={openTabIds.has(tabId)}
                 onClick={() => onOpenFile(entry.path, entry.name)}
-                thumb={undefined}
+                thumb={null}
                 name={entry.name}
-                sub="📄 磁盘文件"
+                sub="磁盘文件"
                 actions={null}
               />
             );
           })}
+      </div>
+
+      {/* Footer: settings (CLI install, etc.) */}
+      <div className="excal-sidebar-footer">
+        <button
+          className="excal-btn excal-btn--ghost"
+          style={{ gap: "0.4rem", justifyContent: "flex-start" }}
+          onClick={onOpenSettings}
+        >
+          <SettingsIcon />
+          设置
+        </button>
       </div>
     </div>
   );
@@ -235,25 +271,29 @@ function Item({
 }: {
   active: boolean;
   onClick: () => void;
-  thumb?: string;
+  /** thumbnail data URL; null = show a file icon; undefined = placeholder */
+  thumb?: string | null;
   name: string;
   sub: string;
   actions: React.ReactNode;
 }) {
   return (
     <div
-      className="excal-scene-item"
-      style={{
-        ...sidebarStyle.item,
-        ...(active ? sidebarStyle.itemOpen : null),
-      }}
+      className={`excal-row${active ? " excal-row--active" : ""}`}
+      style={sidebarStyle.item}
       onClick={onClick}
     >
       <div style={sidebarStyle.thumb}>
         {thumb ? (
           <img src={thumb} style={sidebarStyle.thumbImg} alt="" />
+        ) : thumb === null ? (
+          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+            <FileIcon />
+          </span>
         ) : (
-          <span style={sidebarStyle.thumbPlaceholder}>▢</span>
+          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+            <ImageIcon />
+          </span>
         )}
       </div>
       <div style={sidebarStyle.itemMeta}>
