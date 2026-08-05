@@ -8,6 +8,7 @@
 // renders in the webview, and registers the `render_done` callback command.
 
 mod ipc;
+mod cli_install;
 
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
@@ -39,7 +40,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ipc::render_done,
-            ipc::render_log
+            ipc::render_log,
+            cli_install::cli_status,
+            cli_install::cli_install,
+            cli_install::cli_uninstall
         ])
         .setup(|app| {
             // Spawn the local IPC HTTP server (for the `excal` CLI render flow).
