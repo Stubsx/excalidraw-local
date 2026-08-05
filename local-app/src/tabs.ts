@@ -253,9 +253,14 @@ export function useTabs() {
   );
 
   const markDirty = useCallback((id: string) => {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, dirty: true } : t)),
-    );
+    setTabs((prev) => {
+      const tab = prev.find((t) => t.id === id);
+      // No-op when the tab is already dirty: returning the same array avoids
+      // a parent re-render on every Excalidraw onChange, which otherwise
+      // feeds back into the tunnel-rat stores and loops (React error #185).
+      if (!tab || tab.dirty) return prev;
+      return prev.map((t) => (t.id === id ? { ...t, dirty: true } : t));
+    });
   }, []);
 
   const markClean = useCallback((id: string) => {
