@@ -37,3 +37,6 @@ local-app/src-tauri/gen/
 # SQLite runtime files (the .db itself is kept for portability)
 *.db-shm
 *.db-wal
+
+# ZCode CLI session state (transient, per-session)
+.zcode/

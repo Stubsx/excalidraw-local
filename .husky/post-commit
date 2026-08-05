@@ -1,0 +1,27 @@
+#!/bin/sh
+# post-commit — auto-rebuild Excalidraw Local after every commit.
+#
+# Mirrors the AIStatusBar reference workflow: kick off a background build that
+#   1. rebuilds the .app + .dmg,
+#   2. stages the dmg into dist-release/, and
+#   3. restarts the locally-running app.
+#
+# Runs detached via nohup so `git commit` returns instantly; the build (Tauri
+# release, 1–few min) and its output go to dist-release/build.log.
+#
+# Skip on rebase/am/merge commits and when the hook is disabled:
+#   HOOK_SKIP=1 git commit ...      # bypass
+REPO_DIR="$(git rev-parse --show-toplevel)"
+APP_DIR="$REPO_DIR/local-app"
+BUILD_SCRIPT="$APP_DIR/scripts/build-dmg.sh"
+LOG_DIR="$APP_DIR/dist-release"
+
+# Only fire for plain commits — not rebases / cherry-picks / merges.
+if [ -f "$REPO_DIR/.git/rebase-merge" ] || [ -f "$REPO_DIR/.git/rebase-apply" ]; then
+  exit 0
+fi
+[ -n "${HOOK_SKIP:-}" ] && exit 0
+[ -f "$BUILD_SCRIPT" ] || exit 0
+
+mkdir -p "$LOG_DIR"
+nohup bash "$BUILD_SCRIPT" > "$LOG_DIR/build.log" 2>&1 &
