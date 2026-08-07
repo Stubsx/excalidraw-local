@@ -10,7 +10,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
-import { getScene } from "../db/sceneStore";
+import { getScene, saveSceneByName } from "../db/sceneStore";
 
 /**
  * Shape of the render-request event emitted from Rust (mirrors the CLI body).
@@ -21,6 +21,13 @@ interface RenderRequest {
   sceneId?: string;
   /** Inlined .excalidraw scene JSON (preferred for arbitrary files). */
   data?: string;
+  /**
+   * Library name to save the scene under after rendering (CLI render flow).
+   * Only meaningful together with `data`. When present, the rendered scene is
+   * upserted into the library by this name (deduped) so it shows up in the
+   * sidebar. Omitted / undefined for the --scene-id path (already in library).
+   */
+  name?: string;
   format?: string;
   scale?: number;
 }
@@ -50,14 +57,36 @@ function parseSceneData(raw: string): ParsedScene {
 }
 
 /**
+ * Encode raw image bytes as a data URL (used for the scene thumbnail without
+ * an extra round-trip through a canvas / Blob).
+ */
+function bytesToDataURL(bytes: Uint8Array, mimeType: string): string {
+  let binary = "";
+  const chunk = 0x8000; // avoid call-stack limits on very large strings
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+/**
  * Install the render-request listener. The Rust IPC server emits this event
  * when the `excal` CLI POSTs to /render. We render the requested scene to a
  * PNG blob and hand the bytes back via the `render_done` command, which
  * resolves the waiting HTTP response.
  *
+ * When `data` + `name` are present (CLI rendering an arbitrary file), the
+ * scene is also upserted into the library under `name` and `onLibraryChanged`
+ * is invoked so the sidebar can refresh.
+ *
  * Call once at app startup.
+ *
+ * @param onLibraryChanged optional callback fired after a scene is saved into
+ *   the library (e.g. to bump the sidebar refresh key).
  */
-export async function installRenderListener(): Promise<() => void> {
+export async function installRenderListener(
+  onLibraryChanged?: () => void,
+): Promise<() => void> {
   const unlisten = await listen<RenderRequest>(
     "render-request",
     async (event) => {
@@ -135,6 +164,22 @@ export async function installRenderListener(): Promise<() => void> {
             mimeType: blob.type,
           },
         });
+
+        // CLI render of an arbitrary file: also save it into the library so it
+        // appears in the sidebar. Deduped by name (overwrite if exists). The
+        // --scene-id path skips this (the scene is already in the library).
+        // Wrapped so a DB hiccup never breaks the PNG handoff to the CLI.
+        if (req.data && req.name) {
+          try {
+            // Build a thumbnail dataURL from the just-rendered PNG bytes —
+            // zero extra render cost.
+            const thumbnail = bytesToDataURL(bytes, blob.type);
+            await saveSceneByName(req.name, scene, thumbnail);
+            onLibraryChanged?.();
+          } catch (e) {
+            console.warn("[render] library save failed", e);
+          }
+        }
 
         const elapsed = Math.round(performance.now() - started);
         console.info(

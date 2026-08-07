@@ -60,6 +60,11 @@ struct RenderRequest {
     /// exclusive with sceneId.
     #[serde(default)]
     data: Option<String>,
+    /// Library name to save the rendered scene under (CLI render auto-import).
+    /// Only used together with `data`. The webview upserts the scene by this
+    /// name so it shows up in the sidebar. Omitted for the sceneId path.
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default = "default_format")]
     format: String,
     #[serde(default)]

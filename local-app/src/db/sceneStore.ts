@@ -3,7 +3,7 @@ import Database from "@tauri-apps/plugin-sql";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
-import type { SavedScene } from "./types";
+import type { SavedScene, FolderHistoryEntry } from "./types";
 
 /**
  * SQLite-backed scene store.
@@ -128,6 +128,78 @@ export async function upsertScene(
       scene.updatedAt,
     ],
   );
+}
+
+/**
+ * Upsert a scene keyed by NAME (used by the CLI render flow).
+ *
+ * If a non-deleted scene with the same name exists, reuse its id and preserve
+ * createdAt / starred, overwriting elements/appState/files/thumbnail and
+ * bumping updatedAt. Otherwise insert a fresh row. This is how `excal render`
+ * auto-saves into the library without creating duplicates on repeated renders
+ * of the same file.
+ *
+ * Returns the scene id that was written.
+ */
+export async function saveSceneByName(
+  name: string,
+  scene: {
+    elements: readonly ExcalidrawElement[];
+    appState: Partial<AppState>;
+    files: BinaryFiles;
+  },
+  thumbnail?: string,
+): Promise<string> {
+  const conn = await db();
+  const now = Date.now();
+
+  // Look for an existing live row with the same name.
+  const rows = await conn.select<{ id: string }[]>(
+    `SELECT id FROM scenes WHERE name = $1 AND is_deleted = 0 LIMIT 1`,
+    [name],
+  );
+
+  if (rows.length > 0) {
+    // Reuse: keep id/created_at/starred, overwrite content + thumbnail.
+    const id = rows[0].id;
+    await conn.execute(
+      `UPDATE scenes SET
+         elements_json = $1,
+         app_state_json = $2,
+         files_json = $3,
+         thumbnail = COALESCE($4, thumbnail),
+         updated_at = $5
+       WHERE id = $6`,
+      [
+        JSON.stringify(scene.elements),
+        JSON.stringify(scene.appState),
+        JSON.stringify(scene.files),
+        thumbnail ?? null,
+        now,
+        id,
+      ],
+    );
+    return id;
+  }
+
+  // Insert a new row.
+  const id = uuid();
+  await conn.execute(
+    `INSERT INTO scenes
+       (id, name, elements_json, app_state_json, files_json, thumbnail, starred, is_deleted, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, $8)`,
+    [
+      id,
+      name,
+      JSON.stringify(scene.elements),
+      JSON.stringify(scene.appState),
+      JSON.stringify(scene.files),
+      thumbnail ?? null,
+      now,
+      now,
+    ],
+  );
+  return id;
 }
 
 /**
@@ -275,4 +347,79 @@ export async function setOpenTabs(ids: string[], activeId: string | null): Promi
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [SESSION_KEY, JSON.stringify({ ids, activeId })],
   );
+}
+
+// --- Folder history (opened-as-project folders) ----------------------------
+
+const FOLDER_HISTORY_KEY = "folder_history";
+/** Cap so the list can't grow unbounded. */
+const FOLDER_HISTORY_MAX = 20;
+
+/** Read the persisted folder history (newest first). Empty if none saved. */
+export async function getFolderHistory(): Promise<FolderHistoryEntry[]> {
+  const conn = await db();
+  const rows = await conn.select<{ value: string }[]>(
+    `SELECT value FROM app_state WHERE key = $1`,
+    [FOLDER_HISTORY_KEY],
+  );
+  if (rows.length === 0) return [];
+  try {
+    const parsed = JSON.parse(rows[0].value) as FolderHistoryEntry[];
+    // Defensive: tolerate slightly malformed entries.
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((e) => e && typeof e.path === "string")
+          .sort((a, b) => b.lastOpened - a.lastOpened)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Persist the full folder history list (newest first). */
+export async function setFolderHistory(
+  folders: FolderHistoryEntry[],
+): Promise<void> {
+  const conn = await db();
+  await conn.execute(
+    `INSERT INTO app_state (key, value) VALUES ($1, $2)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [
+      FOLDER_HISTORY_KEY,
+      JSON.stringify(
+        folders
+          .sort((a, b) => b.lastOpened - a.lastOpened)
+          .slice(0, FOLDER_HISTORY_MAX),
+      ),
+    ],
+  );
+}
+
+/**
+ * Add (or re-promote) a folder in history. Dedupes by path, sets `lastOpened`
+ * to now, caps the list at FOLDER_HISTORY_MAX. Returns the updated list so the
+ * caller can update component state without a re-read.
+ */
+export async function addFolderToHistory(
+  path: string,
+  name: string,
+): Promise<FolderHistoryEntry[]> {
+  const existing = await getFolderHistory();
+  const now = Date.now();
+  const next: FolderHistoryEntry[] = [
+    { path, name, lastOpened: now },
+    ...existing.filter((e) => e.path !== path),
+  ].slice(0, FOLDER_HISTORY_MAX);
+  await setFolderHistory(next);
+  return next;
+}
+
+/** Remove a folder from history (does NOT touch the directory on disk). */
+export async function removeFolderFromHistory(
+  path: string,
+): Promise<FolderHistoryEntry[]> {
+  const existing = await getFolderHistory();
+  const next = existing.filter((e) => e.path !== path);
+  await setFolderHistory(next);
+  return next;
 }

@@ -75,20 +75,8 @@ function App() {
     document.documentElement.classList.toggle("dark", isDark);
   }, [isDark]);
 
-  // The render IPC listener needs the active API; re-register when it changes.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    installRenderListener()
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch((e) => console.error("[excal-local] render listener failed", e));
-    return () => {
-      unlisten?.();
-    };
-  }, []);
-
-  // Throttled sidebar refresh: called when any editor changes.
+  // Throttled sidebar refresh: called when any editor changes, or when a
+  // CLI-rendered scene is auto-saved into the library.
   const refreshSidebar = useCallback(
     (() => {
       let t: ReturnType<typeof setTimeout> | null = null;
@@ -102,6 +90,21 @@ function App() {
     })(),
     [],
   );
+
+  // The render IPC listener needs the active API; re-register when it changes.
+  // Pass refreshSidebar so that CLI-rendered scenes (auto-saved into the
+  // library) make the sidebar list refresh.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    installRenderListener(refreshSidebar)
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e) => console.error("[excal-local] render listener failed", e));
+    return () => {
+      unlisten?.();
+    };
+  }, [refreshSidebar]);
 
   const onApiReady = useCallback((api: ExcalidrawImperativeAPI | null) => {
     activeApiRef.current = api;

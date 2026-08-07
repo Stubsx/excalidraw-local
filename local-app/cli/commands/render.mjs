@@ -112,12 +112,20 @@ export async function runRender(argv) {
 
   // --- request the render ---
   const started = Date.now();
+  // For the `data` path (rendering an arbitrary file), pass the file basename
+  // (sans extension) as the library name so the webview can auto-import it
+  // into the library, deduped by name.
+  const renderName =
+    !sceneId && positional.length > 0
+      ? basename(positional[0], extname(positional[0]))
+      : undefined;
   let resp;
   try {
     resp = await requestRender(port, {
       requestId: requestId(),
       sceneId: sceneId ?? undefined,
       data: data ?? undefined,
+      name: renderName,
       format,
       scale,
     });
