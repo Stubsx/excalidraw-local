@@ -10,6 +10,7 @@
 mod ipc;
 mod cli_install;
 
+use tauri::Manager;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
 /// The single source-of-truth SQLite connection string.
@@ -38,6 +39,14 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // Close button → hide the window instead of quitting the app,
+            // so the CLI render IPC server stays alive in the background.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().ok();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             ipc::render_done,
             ipc::render_log,
@@ -53,6 +62,19 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS: clicking the dock icon while the window is hidden
+            // should bring it back to front (instead of doing nothing).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    win.show().ok();
+                    win.set_focus().ok();
+                }
+            }
+            // Let other events flow through normally.
+            let _ = (app_handle, event);
+        });
 }
