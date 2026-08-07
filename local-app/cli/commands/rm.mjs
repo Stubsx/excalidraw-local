@@ -1,5 +1,6 @@
 import { openDb, dbExists } from "../lib/db.mjs";
 import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
 Usage: excal local rm <id|name> [--purge]
@@ -92,4 +93,7 @@ export async function runRm(argv) {
   } finally {
     db.close();
   }
+
+  // Tell the running app to refresh its sidebar (no-op if app isn't running).
+  await notifyLibraryChanged();
 }

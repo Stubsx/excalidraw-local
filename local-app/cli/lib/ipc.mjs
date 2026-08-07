@@ -78,3 +78,27 @@ export async function requestRender(port, body) {
 export function requestId() {
   return `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/**
+ * Best-effort notification that the library changed (after a CLI write command
+ * like import/mv/rm/put). If the app is running, POSTs /notify so the webview
+ * refreshes its sidebar; if the app isn't running, this is a no-op (the next
+ * app launch reads the fresh data from SQLite directly).
+ *
+ * Never throws — notifications are advisory, not part of the write's success.
+ * @param {string} [kind="library-changed"]
+ */
+export async function notifyLibraryChanged(kind = "library-changed") {
+  const port = getPort();
+  if (!port) return; // app not running — nothing to notify
+  try {
+    await fetch(`http://127.0.0.1:${port}/notify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: kind }),
+    });
+  } catch {
+    // App may have just quit, or still starting up. Silently ignore — the
+    // write itself already succeeded (it went to SQLite directly).
+  }
+}

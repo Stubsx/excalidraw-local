@@ -204,5 +204,20 @@ export async function installRenderListener(
     },
   );
 
-  return unlisten;
+  // Listen for library-changed notifications from CLI write commands
+  // (import/mv/rm/put/...). They write SQLite directly, then POST /notify to
+  // tell us to refresh the sidebar. Best-effort: the callback just bumps the
+  // refresh key; if it's absent we do nothing.
+  let unlistenNotify: (() => void) | undefined;
+  if (onLibraryChanged) {
+    unlistenNotify = await listen<string>("library-changed", () => {
+      onLibraryChanged();
+    });
+  }
+
+  // Aggregate cleanup for both listeners.
+  return () => {
+    unlisten();
+    unlistenNotify?.();
+  };
 }

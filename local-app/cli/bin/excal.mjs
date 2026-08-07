@@ -14,6 +14,7 @@ import { runRender } from "../commands/render.mjs";
 import { runLs } from "../commands/ls.mjs";
 import { runGet } from "../commands/get.mjs";
 import { runImport } from "../commands/importCmd.mjs";
+import { runPut } from "../commands/put.mjs";
 import { runMv } from "../commands/mv.mjs";
 import { runRm } from "../commands/rm.mjs";
 import { runGen } from "../commands/gen.mjs";
@@ -34,7 +35,8 @@ Commands (local):
   Library management (do NOT need the app running — read/write SQLite):
     ls          List scenes in the library.
     get         Export a scene to a .excalidraw file.
-    import      Import a .excalidraw file into the library.
+    import      Import a .excalidraw file into the library (new row).
+    put         Overwrite a scene's content from a .excalidraw file.
     mv          Rename a scene or toggle starred.
     rm          Remove a scene (soft-delete by default, --purge to erase).
     gen         Generate a scene from a declarative spec (mindmap/tree).
@@ -50,6 +52,7 @@ Examples:
   excal local gen --json '{"title":"x","root":{"label":"核心"},"branches":[...]}' -o m.excalidraw
   excal local gen --spec-file spec.json --template tree --import --name "架构树"
   excal local get "架构图" -o out.excalidraw
+  excal local put "架构图" --file edited.excalidraw      # write content back
   excal local mv "架构图" --name "新架构图"
   excal local rm old-draft
   excal local render out.excalidraw -o out.png      # app must be running
@@ -82,9 +85,9 @@ async function main() {
         command: "help",
         message: "excal local commands",
         data: {
-          commands: ["ls", "get", "import", "mv", "rm", "gen", "render", "help"],
+          commands: ["ls", "get", "import", "put", "mv", "rm", "gen", "render", "help"],
           needsApp: ["render"],
-          standalone: ["ls", "get", "import", "mv", "rm", "gen"],
+          standalone: ["ls", "get", "import", "put", "mv", "rm", "gen"],
           templates: ["mindmap", "tree"],
         },
       }),
@@ -104,6 +107,9 @@ async function main() {
       break;
     case "import":
       await runImport(rest);
+      break;
+    case "put":
+      await runPut(rest);
       break;
     case "mv":
       await runMv(rest);

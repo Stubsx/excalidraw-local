@@ -94,6 +94,7 @@ pub async fn start(app: AppHandle) {
 
     let router = Router::new()
         .route("/render", post(handle_render))
+        .route("/notify", post(handle_notify))
         .route("/ping", post(handle_ping))
         .with_state(state);
 
@@ -123,6 +124,33 @@ pub async fn start(app: AppHandle) {
 
 async fn handle_ping() -> &'static str {
     "pong"
+}
+
+/// CLI write commands (import/mv/rm/put/...) post here after writing SQLite to
+/// tell the webview its in-memory library view is stale and should refresh.
+/// This is best-effort: the business logic stays in the CLI (direct DB write);
+/// the IPC server only forwards the notification.
+#[derive(Deserialize)]
+struct NotifyRequest {
+    /// Kind of change, e.g. "library-changed". Forwarded as the event payload
+    /// so the webview can fan out by type later if needed.
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Serialize)]
+struct NotifyResponse {
+    status: &'static str,
+}
+
+async fn handle_notify(
+    State(state): State<Arc<IpcState>>,
+    Json(req): Json<NotifyRequest>,
+) -> Json<NotifyResponse> {
+    // Emit a global event the webview listens for; it triggers a sidebar
+    // refresh. Ignore emit errors (webview may be unavailable).
+    let _ = state.app.emit("library-changed", &req.kind);
+    Json(NotifyResponse { status: "ok" })
 }
 
 async fn handle_render(

@@ -5,6 +5,7 @@ import { generateMindmap } from "../generators/mindmap.mjs";
 import { generateTree } from "../generators/tree.mjs";
 import { openDb, dbExists, uuid } from "../lib/db.mjs";
 import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
 Usage:
@@ -140,6 +141,8 @@ export async function runGen(argv) {
         data: { sceneId: id, name: sceneName, template: tplKey, elements: elementCount },
       }),
     );
+    // Tell the running app to refresh its sidebar (no-op if app isn't running).
+    await notifyLibraryChanged();
     return;
   }
 
