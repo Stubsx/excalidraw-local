@@ -269,6 +269,28 @@ export function useTabs() {
     );
   }, []);
 
+  /**
+   * Sync a library tab's name after the scene is renamed (e.g. from the
+   * sidebar). No-op if the scene isn't open as a tab, or if it's a file tab.
+   * Also keeps `scene.name` in sync so a re-render uses the new name.
+   */
+  const renameTab = useCallback((sceneId: string, newName: string) => {
+    const tabId = tabIdFor("library", sceneId);
+    setTabs((prev) => {
+      const tab = prev.find((t) => t.id === tabId);
+      if (!tab || tab.name === newName) return prev;
+      return prev.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              name: newName,
+              scene: t.scene ? { ...t.scene, name: newName } : t.scene,
+            }
+          : t,
+      );
+    });
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -280,6 +302,7 @@ export function useTabs() {
     closeTab,
     markDirty,
     markClean,
+    renameTab,
   };
 }
 

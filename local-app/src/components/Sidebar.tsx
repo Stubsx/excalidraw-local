@@ -40,6 +40,11 @@ interface SidebarProps {
   /** Currently-open tab ids (kind:ref encoded) to highlight open tabs. */
   openTabIds: Set<string>;
   refreshKey: number;
+  /**
+   * Called after a library scene is renamed in the sidebar, so open tabs can
+   * sync their title. Receives (sceneId, newName).
+   */
+  onSceneRenamed: (sceneId: string, newName: string) => void;
 }
 
 /**
@@ -57,6 +62,7 @@ export function Sidebar({
   onOpenSettings,
   openTabIds,
   refreshKey,
+  onSceneRenamed,
 }: SidebarProps) {
   const [view, setView] = useState<View>("library");
   const [items, setItems] = useState<SceneListItem[]>([]);
@@ -274,6 +280,7 @@ export function Sidebar({
                 item={item}
                 onClick={() => onOpenScene(item.id)}
                 onRenamed={reloadLibrary}
+                onSceneRenamed={onSceneRenamed}
               />
             );
           })}
@@ -382,11 +389,14 @@ function LibraryItem({
   active,
   onClick,
   onRenamed,
+  onSceneRenamed,
 }: {
   item: SceneListItem;
   active: boolean;
   onClick: () => void;
   onRenamed: () => void;
+  /** Propagate the rename to open tabs (syncs tab titles). */
+  onSceneRenamed: (sceneId: string, newName: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.name || "未命名");
@@ -408,11 +418,13 @@ function LibraryItem({
     try {
       await renameScene(item.id, trimmed);
       onRenamed();
+      // Sync any open tab's title (the tab holds its own copy of the name).
+      onSceneRenamed(item.id, trimmed);
     } catch {
       // best-effort; keep the old name on failure
       setDraft(item.name || "未命名");
     }
-  }, [draft, item.id, item.name, onRenamed]);
+  }, [draft, item.id, item.name, onRenamed, onSceneRenamed]);
 
   const cancel = useCallback(() => {
     setDraft(item.name || "未命名");

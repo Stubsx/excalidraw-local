@@ -41,6 +41,7 @@ function App() {
     newTab,
     closeTab,
     markDirty,
+    renameTab,
   } = useTabs();
 
   // The active editor's imperative API — used by the render IPC listener.
@@ -150,6 +151,7 @@ function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             openTabIds={openTabIds}
             refreshKey={sidebarRefresh}
+            onSceneRenamed={renameTab}
           />
           <div style={appLayoutStyle.main}>
             <TabBar
