@@ -61,16 +61,23 @@ export const EditorPane = memo(function EditorPane({ kind, refId, scene, onApiRe
     Promise<ExcalidrawInitialDataState> | null
   >(null);
 
-  // Load the scene into initialData when the binding changes.
+  // Load the scene into initialData ONLY once the scene has resolved.
+  //
+  // Previously this effect ran unconditionally — when `scene === null` (the
+  // async read in tabs.ts hasn't finished yet) it committed an EMPTY scene,
+  // and <Excalidraw> mounted on that empty data. Excalidraw only consumes
+  // `initialData` on first mount, so the real data that arrived later was
+  // silently ignored → the canvas stayed blank. Gating on `scene` mounts the
+  // editor only after real data is available, fixing the blank-canvas bug.
   useEffect(() => {
-    const data = scene
-      ? {
-          elements: scene.elements,
-          appState: scene.appState,
-          files: scene.files,
-        }
-      : { elements: [], appState: {}, files: {} };
-    setInitialData(Promise.resolve(data));
+    if (!scene) return;
+    setInitialData(
+      Promise.resolve({
+        elements: scene.elements,
+        appState: scene.appState,
+        files: scene.files,
+      }),
+    );
   }, [kind, refId, scene]);
 
   // Debounced save. For library tabs → SQLite + thumbnail; for file tabs → disk.
@@ -147,16 +154,15 @@ export const EditorPane = memo(function EditorPane({ kind, refId, scene, onApiRe
   // The API is registered via the onExcalidrawAPI callback below (no extra
   // effect needed — onExcalidrawAPI fires once on mount with the live API).
 
-  if (!initialData) {
+  // Loading gate: while the scene hasn't resolved yet (tabs.ts openFile/openScene
+  // insert a placeholder tab with scene=null, then patch in real data async),
+  // show a themed spinner instead of mounting <Excalidraw> on empty data.
+  // This is also the fix for the blank-canvas bug (see useEffect above).
+  if (!scene || !initialData) {
     return (
-      <div
-        style={{
-          padding: "24px",
-          fontFamily: "var(--ui-font)",
-          color: "var(--color-gray-60)",
-        }}
-      >
-        加载中…
+      <div className="excal-editor-loading">
+        <div className="excal-spinner" />
+        <span>加载中…</span>
       </div>
     );
   }
