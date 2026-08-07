@@ -52,7 +52,9 @@ pub fn run() {
             ipc::render_log,
             cli_install::cli_status,
             cli_install::cli_install,
-            cli_install::cli_uninstall
+            cli_install::cli_uninstall,
+            cli_install::cli_resolve_node_version,
+            cli_install::cli_install_node
         ])
         .setup(|app| {
             // Spawn the local IPC HTTP server (for the `excal` CLI render flow).

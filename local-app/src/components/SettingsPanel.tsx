@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { CloseIcon } from "../icons";
 import { COLORS } from "../styles";
@@ -24,6 +25,26 @@ interface InstallResult {
   message: string;
 }
 
+/** Latest Node v22 LTS resolved from nodejs.org/dist/index.json. */
+interface NodeVersionInfo {
+  version: string;
+  lts: string | null;
+  isFallback: boolean;
+}
+
+/** Mirrors src-tauri/src/cli_install.rs `NodeInstallProgress`. */
+interface NodeInstallProgress {
+  stage: "resolving" | "downloading" | "installing" | "done" | "error";
+  percent: number | null;
+  message: string;
+}
+
+interface NodeInstallResult {
+  success: boolean;
+  version: string | null;
+  message: string;
+}
+
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
@@ -41,6 +62,15 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Node install state
+  const [nodeVersion, setNodeVersion] = useState<NodeVersionInfo | null>(null);
+  const [nodeProgress, setNodeProgress] = useState<NodeInstallProgress | null>(null);
+
+  // True while a Node install is in flight (any non-terminal stage).
+  const nodeBusy =
+    nodeProgress !== null &&
+    nodeProgress.stage !== "done" &&
+    nodeProgress.stage !== "error";
 
   const refresh = useCallback(async () => {
     try {
@@ -51,11 +81,42 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   }, []);
 
+  // Refresh status + pre-resolve the Node version whenever the panel opens.
   useEffect(() => {
     if (open) {
       setToast(null);
+      setNodeProgress(null);
       refresh();
+      // Pre-resolve so the button can show "安装 Node v22.x.x (LTS)".
+      invoke<NodeVersionInfo>("cli_resolve_node_version")
+        .then(setNodeVersion)
+        .catch(() => setNodeVersion(null));
     }
+  }, [open, refresh]);
+
+  // Listen for install-progress events while the panel is open.
+  useEffect(() => {
+    if (!open) return;
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    listen<NodeInstallProgress>("node-install-progress", (e) => {
+      if (cancelled) return;
+      setNodeProgress(e.payload);
+      // On done, refresh so nodeOk flips and the install button disappears.
+      if (e.payload.stage === "done") {
+        refresh();
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, [open, refresh]);
 
   const handleInstall = useCallback(async () => {
@@ -83,6 +144,35 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setToast(`卸载失败: ${e}`);
     } finally {
       setBusy(false);
+    }
+  }, [refresh]);
+
+  const handleInstallNode = useCallback(async () => {
+    setToast(null);
+    // Immediate feedback before the first progress event arrives.
+    setNodeProgress({
+      stage: "resolving",
+      percent: null,
+      message: "查询最新 Node 版本…",
+    });
+    try {
+      const r = await invoke<NodeInstallResult>("cli_install_node", {});
+      if (r.success) {
+        setToast(`Node ${r.version ?? ""} 安装成功`);
+        refresh();
+      } else {
+        setNodeProgress({
+          stage: "error",
+          percent: null,
+          message: r.message,
+        });
+      }
+    } catch (e) {
+      setNodeProgress({
+        stage: "error",
+        percent: null,
+        message: `安装失败: ${e}`,
+      });
     }
   }, [refresh]);
 
@@ -153,11 +243,55 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   status?.nodePresent
                     ? status.nodeOk
                       ? null
-                      : "版本过低，请升级：nodejs.org"
-                    : "请先安装 Node.js ≥ 22.5：nodejs.org"
+                      : "点击下方按钮一键升级"
+                    : "点击下方按钮一键安装"
                 }
               />
             </ul>
+
+            {/* ---------------- Node install (only when needed) ---------------- */}
+            {status && !status.nodeOk && (
+              <div className="excal-node-install">
+                <button
+                  className="excal-btn excal-btn--primary"
+                  onClick={handleInstallNode}
+                  disabled={nodeBusy}
+                >
+                  {nodeBusy
+                    ? nodeProgress?.message ?? "处理中…"
+                    : nodeVersion
+                      ? `安装 Node ${nodeVersion.version}${nodeVersion.lts ? `（${nodeVersion.lts} LTS）` : ""}`
+                      : "安装 Node.js（官方 LTS）"}
+                </button>
+                <p className="excal-settings-desc">
+                  {`下载官方 Node.js v22 LTS 安装包（约 95 MB），系统会弹窗要求输入开机密码授权安装。${nodeVersion?.isFallback ? "（版本查询失败，使用内置版本）" : ""}`}
+                </p>
+
+                {/* progress bar */}
+                {nodeProgress &&
+                  nodeProgress.stage !== "done" &&
+                  nodeProgress.stage !== "error" && (
+                    <div className="excal-progress">
+                      <div className="excal-progress-track">
+                        <div
+                          className="excal-progress-bar"
+                          style={{
+                            width: `${nodeProgress.percent ?? (nodeProgress.stage === "installing" ? 100 : 30)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="excal-progress-label">
+                        {nodeProgress.message}
+                      </span>
+                    </div>
+                  )}
+
+                {/* error message */}
+                {nodeProgress?.stage === "error" && (
+                  <div className="excal-settings-toast">{nodeProgress.message}</div>
+                )}
+              </div>
+            )}
 
             {/* actions */}
             <div className="excal-settings-actions">

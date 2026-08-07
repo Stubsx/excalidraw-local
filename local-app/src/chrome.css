@@ -399,6 +399,47 @@
   }
 }
 
+/* Node install block — one-click installer shown when Node is missing/old. */
+.excal-node-install {
+  margin: 0 0 0.75rem;
+  padding: 0.625rem;
+  background: var(--color-surface-mid);
+  border-radius: var(--border-radius-md);
+
+  .excal-btn {
+    margin-bottom: 0.4rem;
+  }
+}
+
+/* Progress bar for the Node download/install. */
+.excal-progress {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--color-gray-60);
+}
+
+.excal-progress-track {
+  height: 6px;
+  background: var(--default-bg-color);
+  border: 1px solid var(--sidebar-border-color);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+}
+
+.excal-progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 999px;
+  /* Indeterminate-ish pulse when there's no concrete percent. */
+  transition: width 0.3s ease;
+}
+
+.excal-progress-label {
+  display: block;
+  line-height: 1.4;
+}
+
 .excal-codeblock {
   margin: 0;
   padding: 0.5rem 0.625rem;
