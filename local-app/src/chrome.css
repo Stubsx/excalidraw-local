@@ -459,3 +459,105 @@
     transform: translateX(0);
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Editor loading gate — shown while the scene is being read.
+ * Spinner uses --color-primary so it follows the theme.
+ * ------------------------------------------------------------------ */
+.excal-editor-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-family: var(--ui-font);
+  font-size: 0.85rem;
+  color: var(--color-gray-60);
+  background: var(--default-bg-color);
+}
+
+.excal-spinner {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 3px solid var(--color-surface-high);
+  border-top-color: var(--color-primary);
+  animation: excal-spin 0.7s linear infinite;
+}
+
+@keyframes excal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Folder switcher — list of open/recent folders at the top of the
+ * folder view. Each row is a selectable folder; the × removes it from
+ * history (not from disk).
+ * ------------------------------------------------------------------ */
+.excal-folder-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--sidebar-border-color);
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.excal-folder-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  color: var(--color-gray-60);
+  font-size: 0.78rem;
+  transition: background-color 0.1s, color 0.1s;
+
+  &:hover {
+    background-color: var(--color-surface-mid);
+    color: var(--text-primary-color);
+  }
+
+  &.excal-folder-chip--active {
+    background-color: var(--color-surface-primary-container);
+    color: var(--color-on-primary-container);
+  }
+
+  .excal-folder-chip__icon {
+    flex-shrink: 0;
+    display: flex;
+    color: var(--color-primary);
+  }
+
+  .excal-folder-chip__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .excal-folder-chip__close {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--space-factor);
+    color: inherit;
+    opacity: 0.5;
+    display: flex;
+    align-items: center;
+
+    &:hover {
+      opacity: 1;
+      background: var(--color-surface-high);
+    }
+  }
+}

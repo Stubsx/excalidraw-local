@@ -32,3 +32,17 @@ interface SceneRow {
   created_at: number;
   updated_at: number;
 }
+
+/**
+ * One entry in the folder history — a directory the user has opened as a
+ * "project". Persisted in the `app_state` KV table under key `folder_history`,
+ * so it survives restarts. `lastOpened` (epoch ms) drives recency ordering.
+ */
+export interface FolderHistoryEntry {
+  /** Absolute path to the directory. */
+  path: string;
+  /** Display name (last path segment), denormalized for convenience. */
+  name: string;
+  /** Epoch ms of the last time this folder was opened. */
+  lastOpened: number;
+}

@@ -6,8 +6,12 @@ import {
   type SceneListItem,
   deleteScene,
   toggleStarred,
+  getFolderHistory,
+  addFolderToHistory,
+  removeFolderFromHistory,
 } from "../db/sceneStore";
 import { listExcalidrawFiles, pathExists, type FolderEntry } from "../folderStore";
+import type { FolderHistoryEntry } from "../db/types";
 import { sidebarStyle, COLORS } from "../styles";
 import {
   PlusIcon,
@@ -20,6 +24,7 @@ import {
   StarIcon,
   StarFilledIcon,
   SettingsIcon,
+  CloseIcon,
 } from "../icons";
 
 type View = "library" | "folder";
@@ -54,10 +59,26 @@ export function Sidebar({
   const [view, setView] = useState<View>("library");
   const [items, setItems] = useState<SceneListItem[]>([]);
   const [folderEntries, setFolderEntries] = useState<FolderEntry[]>([]);
-  const [folderPath, setFolderPath] = useState<string | null>(null);
+  // Multi-folder model: history list + which one is active.
+  const [folders, setFolders] = useState<FolderHistoryEntry[]>([]);
+  const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [starredOnly, setStarredOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // On first mount, restore folder history from the KV store. If there's a
+  // last-used folder, preselect it (but don't force-switch to folder view —
+  // the user may prefer the library as the landing view).
+  useEffect(() => {
+    getFolderHistory().then((history) => {
+      setFolders(history);
+      if (history.length > 0 && !activeFolderPath) {
+        setActiveFolderPath(history[0].path);
+      }
+    });
+    // run once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reloadLibrary = useCallback(async () => {
     const rows = await queryScenes({
@@ -68,21 +89,21 @@ export function Sidebar({
   }, [search, starredOnly]);
 
   const reloadFolder = useCallback(async () => {
-    if (!folderPath) return;
-    if (!(await pathExists(folderPath))) {
-      setError("文件夹不存在");
+    if (!activeFolderPath) return;
+    if (!(await pathExists(activeFolderPath))) {
+      setError("文件夹不存在（可能已被移动或删除）");
       setFolderEntries([]);
       return;
     }
     setError(null);
-    const entries = await listExcalidrawFiles(folderPath);
+    const entries = await listExcalidrawFiles(activeFolderPath);
     const filtered = search.trim()
       ? entries.filter((e) =>
           e.name.toLowerCase().includes(search.trim().toLowerCase()),
         )
       : entries;
     setFolderEntries(filtered);
-  }, [folderPath, search]);
+  }, [activeFolderPath, search]);
 
   useEffect(() => {
     if (view === "library") reloadLibrary();
@@ -94,13 +115,40 @@ export function Sidebar({
       directory: true,
       multiple: false,
       title: "选择 Excalidraw 文件夹",
-      defaultPath: folderPath ?? undefined,
+      defaultPath: activeFolderPath ?? undefined,
     });
     if (typeof selected === "string") {
-      setFolderPath(selected);
+      const name = selected.split("/").filter(Boolean).pop() ?? selected;
+      const updated = await addFolderToHistory(selected, name);
+      setFolders(updated);
+      setActiveFolderPath(selected);
       setView("folder");
     }
-  }, [folderPath]);
+  }, [activeFolderPath]);
+
+  const switchFolder = useCallback((path: string) => {
+    setActiveFolderPath(path);
+    setView("folder");
+    // bump lastOpened for the chosen folder + reorder.
+    const entry = folders.find((f) => f.path === path);
+    if (entry) {
+      const now = Date.now();
+      const reordered = [
+        { ...entry, lastOpened: now },
+        ...folders.filter((f) => f.path !== path),
+      ];
+      setFolders(reordered);
+      addFolderToHistory(path, entry.name);
+    }
+  }, [folders]);
+
+  const removeFolder = useCallback(async (path: string) => {
+    const updated = await removeFolderFromHistory(path);
+    setFolders(updated);
+    setActiveFolderPath((cur) =>
+      cur === path ? (updated[0]?.path ?? null) : cur,
+    );
+  }, []);
 
   return (
     <div className="excal-sidebar" style={sidebarStyle.container}>
@@ -153,21 +201,53 @@ export function Sidebar({
       </div>
 
       {view === "folder" && (
-        <div style={sidebarStyle.folderBar}>
-          <button
-            className="excal-btn"
-            style={{ gap: "0.3rem" }}
-            onClick={pickFolder}
-          >
-            <FolderIcon />
-            打开文件夹
-          </button>
-          {folderPath && (
-            <div style={sidebarStyle.folderPath} title={folderPath}>
-              {shortenPath(folderPath)}
+        <>
+          <div style={sidebarStyle.folderBar}>
+            <button
+              className="excal-btn"
+              style={{ gap: "0.3rem" }}
+              onClick={pickFolder}
+            >
+              <FolderIcon />
+              打开文件夹
+            </button>
+          </div>
+
+          {/* Folder switcher — recent folders as a list, click to switch,
+              × to remove from history (not from disk). */}
+          {folders.length > 0 && (
+            <div className="excal-folder-switcher">
+              {folders.map((f) => {
+                const active = f.path === activeFolderPath;
+                return (
+                  <div
+                    key={f.path}
+                    className={`excal-folder-chip${
+                      active ? " excal-folder-chip--active" : ""
+                    }`}
+                    title={f.path}
+                    onClick={() => switchFolder(f.path)}
+                  >
+                    <span className="excal-folder-chip__icon">
+                      <FolderIcon />
+                    </span>
+                    <span className="excal-folder-chip__name">{f.name}</span>
+                    <button
+                      className="excal-folder-chip__close"
+                      title="从历史移除"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFolder(f.path);
+                      }}
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {error && <div style={sidebarStyle.errorMsg}>{error}</div>}
@@ -178,7 +258,7 @@ export function Sidebar({
         )}
         {view === "folder" && folderEntries.length === 0 && (
           <Empty
-            text={folderPath ? "该文件夹没有 .excalidraw 文件" : "点上方按钮打开文件夹"}
+            text={activeFolderPath ? "该文件夹没有 .excalidraw 文件" : "点上方按钮打开文件夹"}
           />
         )}
 
@@ -315,10 +395,4 @@ function relTime(ts: number): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}天前`;
   return new Date(ts).toLocaleDateString();
-}
-
-function shortenPath(p: string): string {
-  const parts = p.split("/");
-  if (parts.length <= 3) return p;
-  return "…/" + parts.slice(-2).join("/");
 }
