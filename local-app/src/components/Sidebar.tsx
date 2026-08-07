@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import {
@@ -6,6 +6,7 @@ import {
   type SceneListItem,
   deleteScene,
   toggleStarred,
+  renameScene,
   getFolderHistory,
   addFolderToHistory,
   removeFolderFromHistory,
@@ -25,6 +26,7 @@ import {
   StarFilledIcon,
   SettingsIcon,
   CloseIcon,
+  PencilIcon,
 } from "../icons";
 
 type View = "library" | "folder";
@@ -266,41 +268,12 @@ export function Sidebar({
           items.map((item) => {
             const tabId = `library:${item.id}`;
             return (
-              <Item
+              <LibraryItem
                 key={item.id}
                 active={openTabIds.has(tabId)}
+                item={item}
                 onClick={() => onOpenScene(item.id)}
-                thumb={item.thumbnail}
-                name={item.name || "未命名"}
-                sub={relTime(item.updatedAt)}
-                actions={
-                  <>
-                    <button
-                      className="excal-btn excal-btn--icon excal-btn--ghost"
-                      title={item.starred ? "取消收藏" : "收藏"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleStarred(item.id).then(reloadLibrary);
-                      }}
-                      style={{ color: item.starred ? COLORS.star : undefined }}
-                    >
-                      {item.starred ? <StarFilledIcon /> : <StarIcon />}
-                    </button>
-                    <button
-                      className="excal-btn excal-btn--icon excal-btn--ghost"
-                      title="删除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`删除"${item.name}"?`)) {
-                          deleteScene(item.id).then(reloadLibrary);
-                        }
-                      }}
-                      style={{ color: COLORS.danger }}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </>
-                }
+                onRenamed={reloadLibrary}
               />
             );
           })}
@@ -395,4 +368,136 @@ function relTime(ts: number): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}天前`;
   return new Date(ts).toLocaleDateString();
+}
+
+/**
+ * A library row with inline rename support.
+ *
+ * Click the pencil to edit the name in place: the name swaps for an input
+ * bound to the same row. Enter / blur commits, Esc cancels. Rename is
+ * committed via `renameScene` (already used by the `excal mv --name` CLI).
+ */
+function LibraryItem({
+  item,
+  active,
+  onClick,
+  onRenamed,
+}: {
+  item: SceneListItem;
+  active: boolean;
+  onClick: () => void;
+  onRenamed: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.name || "未命名");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus + select when entering edit mode.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const commit = useCallback(async () => {
+    const trimmed = draft.trim();
+    setEditing(false);
+    // No-op if unchanged or empty.
+    if (!trimmed || trimmed === item.name) return;
+    try {
+      await renameScene(item.id, trimmed);
+      onRenamed();
+    } catch {
+      // best-effort; keep the old name on failure
+      setDraft(item.name || "未命名");
+    }
+  }, [draft, item.id, item.name, onRenamed]);
+
+  const cancel = useCallback(() => {
+    setDraft(item.name || "未命名");
+    setEditing(false);
+  }, [item.name]);
+
+  return (
+    <div
+      className={`excal-row${active ? " excal-row--active" : ""}`}
+      style={sidebarStyle.item}
+      onClick={onClick}
+    >
+      <div style={sidebarStyle.thumb}>
+        {item.thumbnail ? (
+          <img src={item.thumbnail} style={sidebarStyle.thumbImg} alt="" />
+        ) : (
+          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+            <ImageIcon />
+          </span>
+        )}
+      </div>
+      <div style={sidebarStyle.itemMeta}>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="excal-input excal-rename-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            // Stop the row click from opening the scene while typing.
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+              }
+            }}
+            onBlur={commit}
+          />
+        ) : (
+          <>
+            <div style={sidebarStyle.itemName}>{item.name || "未命名"}</div>
+            <div style={sidebarStyle.itemTime}>{relTime(item.updatedAt)}</div>
+          </>
+        )}
+      </div>
+      <div style={sidebarStyle.itemActions}>
+        <button
+          className="excal-btn excal-btn--icon excal-btn--ghost"
+          title="重命名"
+          onClick={(e) => {
+            e.stopPropagation();
+            setDraft(item.name || "未命名");
+            setEditing(true);
+          }}
+        >
+          <PencilIcon />
+        </button>
+        <button
+          className="excal-btn excal-btn--icon excal-btn--ghost"
+          title={item.starred ? "取消收藏" : "收藏"}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleStarred(item.id).then(onRenamed);
+          }}
+          style={{ color: item.starred ? COLORS.star : undefined }}
+        >
+          {item.starred ? <StarFilledIcon /> : <StarIcon />}
+        </button>
+        <button
+          className="excal-btn excal-btn--icon excal-btn--ghost"
+          title="删除"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm(`删除"${item.name}"?`)) {
+              deleteScene(item.id).then(onRenamed);
+            }
+          }}
+          style={{ color: COLORS.danger }}
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    </div>
+  );
 }

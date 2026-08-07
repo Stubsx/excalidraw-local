@@ -440,6 +440,15 @@
   line-height: 1.4;
 }
 
+/* Inline rename input inside a sidebar library row — compact to fit row height. */
+.excal-rename-input {
+  width: 100%;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.82rem;
+  margin-top: -1px;
+  margin-bottom: 2px;
+}
+
 .excal-codeblock {
   margin: 0;
   padding: 0.5rem 0.625rem;

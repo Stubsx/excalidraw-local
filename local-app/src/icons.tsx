@@ -76,6 +76,20 @@ const FolderIconEl = createIcon(
   { width: 24, height: 24 },
 );
 
+/**
+ * Tabler "pencil" (outline). Used for the rename action.
+ * https://tabler.io/icons/icon/pencil
+ */
+const PencilIconEl = createIcon(
+  <svg fill="none" stroke="currentColor" strokeWidth={2}>
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M4 20h4l10.5 -10.5a1.5 1.5 0 0 0 0 -2.121l-3.879 -3.879a1.5 1.5 0 0 0 -2.121 0l-10.5 10.5v4z" />
+    <path d="M13.5 6.5l4 4" />
+  </svg>,
+  { width: 24, height: 24 },
+);
+
 export const StarIcon = asComponent(StarIconEl);
 export const StarFilledIcon = asComponent(StarFilledIconEl);
 export const FolderIcon = asComponent(FolderIconEl);
+export const PencilIcon = asComponent(PencilIconEl);
