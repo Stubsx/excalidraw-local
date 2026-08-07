@@ -91,8 +91,9 @@ export const EditorPane = memo(function EditorPane({ kind, refId, scene, onApiRe
       const files = api.getFiles();
 
       if (kind === "library") {
-        // Persist to SQLite + regenerate thumbnail.
-        saveEditorState(refId, "未命名", allElements, appState, files).catch((e) =>
+        // Persist to SQLite + regenerate thumbnail. Name is intentionally
+        // omitted: autosave must not rename the scene (see saveEditorState).
+        saveEditorState(refId, allElements, appState, files).catch((e) =>
           console.error("[excal-local] autosave failed", e),
         );
         if (elements.length > 0) {
@@ -137,7 +138,7 @@ export const EditorPane = memo(function EditorPane({ kind, refId, scene, onApiRe
       const appState = cleanAppStateForExport(api.getAppState());
       const files = api.getFiles();
       if (kind === "library") {
-        saveEditorState(refId, "未命名", elements, appState, files).catch(() => {});
+        saveEditorState(refId, elements, appState, files).catch(() => {});
       } else {
         writeFileScene(refId, {
           type: "excalidraw",

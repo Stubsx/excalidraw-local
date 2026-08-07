@@ -205,19 +205,26 @@ export async function saveSceneByName(
 /**
  * Convenience: persist the current editor state into a scene row.
  * Used by the debounced autosave in onChange. Also refreshes the thumbnail.
+ *
+ * `name` is OPTIONAL: when omitted, the existing DB name is preserved. The
+ * GUI editor never renames a scene (renames go through the CLI `mv` command
+ * or sidebar affordances), so autosave must NOT clobber the name — previously
+ * a hardcoded "未命名" was passed here, which silently renamed every scene the
+ * user touched back to "未命名" on the next change.
  */
 export async function saveEditorState(
   id: string,
-  name: string,
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
   files: BinaryFiles,
+  name?: string,
 ): Promise<void> {
   const now = Date.now();
   const existing = await getScene(id);
   await upsertScene({
     id,
-    name,
+    // Preserve the existing name unless the caller explicitly passes one.
+    name: name ?? existing?.name ?? "未命名",
     elements,
     appState,
     files,
