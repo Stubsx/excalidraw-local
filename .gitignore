@@ -49,3 +49,5 @@ local-app/runtime/
 *.p8
 *.mobileprovision
 .env.release
+*.key
+*.key.pub

@@ -17,6 +17,7 @@ import { useTabs } from "./tabs";
 import { getWorkspaceShortcut } from "./shortcuts";
 import { appLayoutStyle } from "./styles";
 import { WorkspaceIcon } from "./icons";
+import { useAppUpdater } from "./updater";
 
 // Excalidraw's CSS variables (colors, fonts, radii) are scoped to `.excalidraw`.
 // Importing chrome.css here adds the button/input/tab recipes that consume
@@ -61,6 +62,9 @@ function App() {
     syncLibrary,
     renameTab,
   } = useTabs(flushActive);
+  const updater = useAppUpdater(prepareExit, bootstrapped);
+  const updating = useRef(false);
+  updating.current = updater.busy;
 
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   // Settings panel (CLI install, etc.) open state.
@@ -203,6 +207,9 @@ function App() {
     let disposed = false;
     let cleanup: (() => void) | undefined;
     listen("app-exit-requested", async () => {
+      if (updating.current) {
+        return;
+      }
       try {
         await prepareExit();
         await invoke("app_exit");
@@ -314,6 +321,7 @@ function App() {
                 }}
                 searchRef={searchRef}
                 onOpenSettings={openSettings}
+                updateAvailable={updater.available}
                 activeTabId={activeId}
                 refreshKey={sidebarRefresh}
                 onSceneRenamed={renameTab}
@@ -407,6 +415,7 @@ function App() {
             onClose={closeSettings}
             theme={theme}
             onThemeChange={onThemeChange}
+            updater={updater}
           />
         </div>
       </div>

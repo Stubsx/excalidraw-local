@@ -10,6 +10,7 @@
 mod cli_install;
 mod files;
 mod ipc;
+mod updater;
 
 use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
@@ -40,6 +41,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
+        .manage(updater::UpdateState::default())
         .on_window_event(|window, event| {
             // Close button → hide the window instead of quitting the app,
             // so the CLI render IPC server stays alive in the background.
@@ -56,7 +60,11 @@ pub fn run() {
             ipc::render_ready,
             ipc::render_log,
             cli_install::setup_status,
-            cli_install::setup_install
+            cli_install::setup_install,
+            updater::updater_check,
+            updater::updater_download,
+            updater::updater_install,
+            updater::open_project_page
         ])
         .setup(|app| {
             // Spawn the local IPC HTTP server (for the `excal` CLI render flow).

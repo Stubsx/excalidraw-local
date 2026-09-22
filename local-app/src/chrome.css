@@ -887,6 +887,110 @@
   font-size: 13px;
   font-weight: 600;
 }
+.excal-app-updates {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--sidebar-border-color);
+}
+.excal-update-version,
+.excal-update-badge {
+  color: var(--color-primary);
+  background: var(--color-surface-mid);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.excal-update-badge {
+  margin-left: auto;
+}
+.excal-update-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin: 12px 0;
+}
+.excal-update-preferences label {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 11px;
+  cursor: pointer;
+}
+.excal-update-preferences input {
+  accent-color: var(--color-primary);
+  margin: 0;
+}
+.excal-update-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--sidebar-border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.excal-update-result p {
+  margin: 0;
+}
+.excal-update-result small,
+.excal-update-source {
+  color: var(--color-gray-60);
+  font-size: 10px;
+}
+.excal-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.excal-update-actions .excal-btn {
+  font-size: 11px;
+}
+.excal-update-source {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-top: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.excal-update-source:hover {
+  color: var(--color-primary);
+}
+.excal-update-notes {
+  font-size: 11px;
+  margin-top: 12px;
+}
+.excal-update-notes summary {
+  cursor: pointer;
+}
+.excal-update-notes div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 8px;
+  line-height: 1.7;
+  color: var(--color-gray-60);
+}
+.excal-update-progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.excal-update-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--color-primary);
+}
+.excal-update-error {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--color-danger, #d32f2f);
+  overflow-wrap: anywhere;
+}
 .excal-appearance {
   display: flex;
   align-items: center;

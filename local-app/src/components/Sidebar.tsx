@@ -53,6 +53,7 @@ interface SidebarProps {
   searchRef: React.RefObject<HTMLInputElement | null>;
   /** Open the settings panel (CLI install etc.). */
   onOpenSettings: () => void;
+  updateAvailable?: boolean;
   /** Only the current tab (kind:ref encoded) is highlighted. */
   activeTabId: string | null;
   refreshKey: number;
@@ -80,6 +81,7 @@ export function Sidebar({
   onPickFile,
   searchRef,
   onOpenSettings,
+  updateAvailable,
   activeTabId,
   refreshKey,
   onSceneRenamed,
@@ -504,7 +506,12 @@ export function Sidebar({
       <footer className="excal-sidebar-footer">
         <button className="excal-btn excal-btn--ghost" onClick={onOpenSettings}>
           <SettingsIcon />
-          设置与 AI 技能<kbd>⌘ ,</kbd>
+          设置与 AI 技能
+          {updateAvailable ? (
+            <span className="excal-update-badge">有更新</span>
+          ) : (
+            <kbd>⌘ ,</kbd>
+          )}
         </button>
       </footer>
     </aside>

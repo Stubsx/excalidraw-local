@@ -1,6 +1,6 @@
 [package]
 name = "excalidraw-local"
-version = "0.2.6"
+version = "0.2.7"
 description = "Local-first Excalidraw desktop app with file management and Agent CLI"
 authors = ["jabber1"]
 edition = "2021"
@@ -31,6 +31,10 @@ tauri-plugin-dialog = "2.0.0-rc.8"
 dirs = "5"
 tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "system-proxy"] }
+semver = "1"
+tauri-plugin-opener = "2"
 
 [features]
 # This enables the custom protocol in release builds.

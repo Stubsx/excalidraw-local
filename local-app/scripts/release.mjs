@@ -11,7 +11,8 @@ import {
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { createUpdateManifest } from "./update-manifest.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const options = process.argv.slice(2);
@@ -20,6 +21,24 @@ if (options.some((v) => v !== "--preview"))
 if (process.platform !== "darwin")
   throw new Error("DMG releases require macOS");
 const preview = options.includes("--preview");
+// The updater key is independent of Developer ID, and must stay fixed for all
+// future releases. Only its public half is embedded in the app.
+const defaultUpdaterKey = join(
+  homedir(),
+  ".config/excalidraw-local/release/updater.key",
+);
+if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
+  if (!existsSync(defaultUpdaterKey)) {
+    throw new Error(
+      "Missing updater signing key. Set TAURI_SIGNING_PRIVATE_KEY or restore the fixed local updater.key; do not generate a replacement key.",
+    );
+  }
+  process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(
+    defaultUpdaterKey,
+    "utf8",
+  ).trim();
+}
+process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
 const pkg = JSON.parse(readFileSync(join(root, "package.json")));
 const config = JSON.parse(
   readFileSync(join(root, "src-tauri/tauri.conf.json")),
@@ -123,6 +142,11 @@ if (!preview) {
     app,
   ]);
   run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+} else {
+  // A valid ad-hoc bundle seal also covers the native Icon Composer resources.
+  // This is not a Developer ID signature and does not imply notarization.
+  run("/usr/bin/codesign", ["--force", "--sign", "-", app]);
+  run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
 }
 const temporary = mkdtempSync(join(tmpdir(), "excal-release-"));
 try {
@@ -172,8 +196,48 @@ try {
     run("/usr/bin/xcrun", ["stapler", "validate", candidate]);
   }
   cpSync(candidate, dmg);
+  // Package the final (and, for production, stapled) app for the official updater.
+  const updaterName = `Excalidraw-Local-macOS-${arch}.app.tar.gz`;
+  const updaterArchive = join(output, updaterName);
+  execFileSync(
+    "/usr/bin/tar",
+    ["-czf", updaterArchive, "-C", join(app, ".."), "Excalidraw Local.app"],
+    {
+      cwd: root,
+      stdio: "inherit",
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
+    },
+  );
+  run("yarn", ["tauri", "signer", "sign", updaterArchive]);
+  const signature = readFileSync(`${updaterArchive}.sig`, "utf8").trim();
+  const changelog = readFileSync(join(root, "docs/CHANGELOG.md"), "utf8");
+  const notes =
+    changelog
+      .split(`## ${version} ·`)[1]
+      ?.split("\n## ")[0]
+      ?.split("\n")
+      .slice(1)
+      .join("\n")
+      .trim() || `Excalidraw Local ${version}`;
+  const manifest = createUpdateManifest({
+    version,
+    arch,
+    preview,
+    signature,
+    notes,
+  });
+  writeFileSync(
+    join(output, "latest.json"),
+    JSON.stringify(manifest, null, 2) + "\n",
+  );
   const sha = createHash("sha256").update(readFileSync(dmg)).digest("hex");
-  writeFileSync(join(output, "SHA256SUMS"), `${sha}  ${dmgName}\n`);
+  const updaterSha = createHash("sha256")
+    .update(readFileSync(updaterArchive))
+    .digest("hex");
+  writeFileSync(
+    join(output, "SHA256SUMS"),
+    `${sha}  ${dmgName}\n${updaterSha}  ${updaterName}\n`,
+  );
   writeFileSync(
     join(output, "release.json"),
     JSON.stringify(
@@ -185,6 +249,9 @@ try {
         notarized: !preview,
         sha256: sha,
         artifact: dmgName,
+        updaterArtifact: updaterName,
+        updaterSha256: updaterSha,
+        updaterSigned: true,
       },
       null,
       2,

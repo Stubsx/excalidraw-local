@@ -6,6 +6,9 @@ import type { Theme } from "@excalidraw/element/types";
 import { CloseIcon } from "../icons";
 
 import { SkillQuickStart } from "./SkillQuickStart";
+import { AppUpdates } from "./AppUpdates";
+
+import type { AppUpdater } from "../updater";
 
 interface Target {
   id: string;
@@ -34,9 +37,16 @@ interface Props {
   onClose: () => void;
   theme: Theme | "system";
   onThemeChange: (theme: Theme | "system") => void;
+  updater?: AppUpdater;
 }
 
-export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
+export function SettingsPanel({
+  open,
+  onClose,
+  theme,
+  onThemeChange,
+  updater,
+}: Props) {
   const [status, setStatus] = useState<Status | null>(null);
   const [selected, setSelected] = useState<string[]>(["agents"]);
   const [shell, setShell] = useState("none");
@@ -48,7 +58,8 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  const locked = busy || !!updater?.busy;
+  busyRef.current = locked;
 
   const refresh = useCallback(async () => {
     const ticket = ++generation.current;
@@ -145,7 +156,7 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
       <div
         className="excal-settings-backdrop"
         onClick={() => {
-          if (!busy) {
+          if (!locked) {
             onClose();
           }
         }}
@@ -166,13 +177,14 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
             ref={closeButton}
             className="excal-btn excal-btn--icon excal-btn--ghost"
             title="关闭设置"
-            disabled={busy}
+            disabled={locked}
             onClick={onClose}
           >
             <CloseIcon />
           </button>
         </header>
         <div className="excal-settings-body">
+          {updater && <AppUpdates updater={updater} disabled={busy} />}
           <section className="excal-appearance">
             <h3>外观</h3>
             <div
@@ -348,7 +360,10 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
           <button
             className="excal-btn excal-btn--primary excal-install-button"
             disabled={
-              busy || scanning || !status?.runtimeReady || selected.length === 0
+              locked ||
+              scanning ||
+              !status?.runtimeReady ||
+              selected.length === 0
             }
             onClick={install}
           >

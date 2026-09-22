@@ -65,6 +65,8 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_NOTARY_PROFILE: excal-release
           APPLE_NOTARY_KEYCHAIN: ${{ runner.temp }}/release.keychain-db
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: yarn workspace excalidraw-local release
       - uses: actions/upload-artifact@v4
         with:
@@ -91,4 +93,5 @@ jobs:
           cat release-assets/macos-*/SHA256SUMS > release-assets/SHA256SUMS
           cp release-assets/macos-arm64/release.json release-assets/release-arm64.json
           cp release-assets/macos-x64/release.json release-assets/release-x64.json
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" release-assets/macos-*/*.dmg release-assets/SHA256SUMS release-assets/release-*.json --verify-tag --title "Excalidraw Local $GITHUB_REF_NAME" --generate-notes
+          node local-app/scripts/merge-updates.mjs release-assets/latest.json release-assets/macos-*/latest.json
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" release-assets/macos-*/*.dmg release-assets/macos-*/*.app.tar.gz release-assets/macos-*/*.sig release-assets/latest.json release-assets/SHA256SUMS release-assets/release-*.json --verify-tag --title "Excalidraw Local $GITHUB_REF_NAME" --generate-notes

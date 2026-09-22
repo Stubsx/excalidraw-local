@@ -1,3 +1,17 @@
+# Excalidraw Local
+
+基于 Excalidraw 的开源 macOS 绘图应用。图稿保存在本机，支持资料库、多标签、文件夹浏览，以及可一键安装到 AI 客户端的绘图技能。
+
+- [下载安装包与查看更新记录](https://github.com/Stubsx/excalidraw-local/releases)
+- [桌面应用开发说明](local-app/README.md) · [发布与签名流程](local-app/docs/RELEASING.md)
+- 应用内「设置 → 应用更新」可检查 GitHub Release，校验更新包签名后安装并重启；支持自动检查和预览版开关。
+- 当前提供 Apple Silicon 预览包，尚未完成 Apple Developer ID 签名及公证。首次安装需要手动下载；0.2.7 起内置自动更新。
+- 按 MIT 许可证开源，保留 Excalidraw 上游版权。用户的资料库、图稿和签名私钥不包含在仓库中。
+
+## Excalidraw 上游项目
+
+以下为上游编辑器的项目介绍。本仓库的桌面应用代码位于 `local-app/`。
+
 <a href="https://excalidraw.com/" target="_blank" rel="noopener">
   <picture>
     <source media="(prefers-color-scheme: dark)" alt="Excalidraw" srcset="https://excalidraw.nyc3.cdn.digitaloceanspaces.com/github/excalidraw_github_cover_2_dark.png" />

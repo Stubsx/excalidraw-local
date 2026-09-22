@@ -25,7 +25,7 @@
 
 本机检查 `security find-identity -v -p codesigning` 返回 0 个可用身份。因此当前只能验证未公证预览构建；正式签名、公证及双架构 CI 需要按 [RELEASING.md](RELEASING.md) 配置 Developer ID 证书和 Apple 凭据后执行。未用自签名证书冒充苹果公证。
 
-资料库不上传 GitHub。仓库维持私有，下载 Release 需要仓库读权限。
+资料库不上传 GitHub。此轮检查时仓库为私有；2026-09-22 按用户要求改为 MIT 开源公开仓库，Release 下载现已无需登录。
 
 ## 验收结果
 
