@@ -22,6 +22,8 @@ import {
   file as fileEl,
   LibraryIcon as LibraryIconEl,
   settingsIcon as settingsIconEl,
+  copyIcon as copyIconEl,
+  checkIcon as checkIconEl,
 } from "@excalidraw/excalidraw/components/icons";
 
 import type { ReactElement } from "react";
@@ -41,6 +43,8 @@ export const searchIcon = asComponent(searchIconEl);
 export const file = asComponent(fileEl);
 export const LibraryIcon = asComponent(LibraryIconEl);
 export const SettingsIcon = asComponent(settingsIconEl);
+export const CopyIcon = asComponent(copyIconEl);
+export const CheckIcon = asComponent(checkIconEl);
 
 /**
  * Tabler "star" (outline). Excalidraw has no star icon, but this path is from

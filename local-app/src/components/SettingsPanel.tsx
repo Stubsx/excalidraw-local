@@ -5,6 +5,8 @@ import type { Theme } from "@excalidraw/element/types";
 
 import { CloseIcon } from "../icons";
 
+import { SkillQuickStart } from "./SkillQuickStart";
+
 interface Target {
   id: string;
   name: string;
@@ -319,19 +321,29 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
               {error}
             </div>
           )}
-          {result && (
-            <div className="excal-install-result" role="status">
-              <strong>✓ 技能已安装</strong>
-              <p>{result.message}</p>
-              {result.backups.length > 0 && (
-                <details>
-                  <summary>查看备份位置</summary>
-                  {result.backups.map((path) => (
-                    <code key={path}>{path}</code>
-                  ))}
+          {(result ||
+            (status?.runtimeReady &&
+              status.targets.some((target) => target.installed))) && (
+            <SkillQuickStart>
+              {result && (
+                <details className="excal-install-details">
+                  <summary>
+                    安装详情{result.backups.length > 0 ? "与备份" : ""}
+                  </summary>
+                  <div className="excal-install-details-body">
+                    <p>{result.message}</p>
+                    {result.backups.length > 0 && (
+                      <>
+                        <p>原有技能已备份到：</p>
+                        {result.backups.map((path) => (
+                          <code key={path}>{path}</code>
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </details>
               )}
-            </div>
+            </SkillQuickStart>
           )}
           <button
             className="excal-btn excal-btn--primary excal-install-button"
@@ -342,9 +354,11 @@ export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
           >
             {busy
               ? "正在安装技能与命令工具…"
-              : result
-              ? "再次安装 / 更新"
-              : `安装到 ${selected.length} 个位置`}
+              : `${
+                  status?.targets.some((target) => target.installed)
+                    ? "安装 / 更新到"
+                    : "安装到"
+                } ${selected.length} 个位置`}
           </button>
           <p className="excal-settings-footnote">
             Excalidraw Local {status?.version ?? ""} ·

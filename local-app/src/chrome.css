@@ -1035,16 +1035,55 @@
   border-radius: 7px;
   background: var(--island-bg-color);
   font-size: 11px;
-  max-height: 150px;
-  overflow-y: auto;
 }
-.excal-install-result strong {
+.excal-skill-ready-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.excal-skill-ready-heading strong {
   color: var(--excal-success);
   font-weight: 600;
+}
+.excal-copy-prompt {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--color-primary);
+}
+.excal-copy-prompt > span:first-child {
+  display: flex;
 }
 .excal-install-result p {
   line-height: 1.7;
   margin: 7px 0;
+}
+.excal-skill-next-step {
+  color: var(--color-gray-60);
+}
+.excal-install-result .excal-starter-prompt {
+  padding: 10px 12px;
+  margin: 10px 0 0;
+  border-radius: 5px;
+  background: var(--color-surface-mid);
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.excal-install-details {
+  margin-top: 10px;
+  color: var(--color-gray-60);
+}
+.excal-install-details summary {
+  cursor: pointer;
+}
+.excal-install-details-body {
+  max-height: 72px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .excal-install-result code {
   display: block;
