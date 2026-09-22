@@ -1,5 +1,10 @@
 import { openDb, dbExists } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 
 const USAGE = `\
 Usage: excal local ls [options]
@@ -9,7 +14,7 @@ List scenes in the local library.
 Options:
   --format <json|table>   Output format (default: json; table prints a readable grid).
   --starred               Only starred scenes.
-  --stdout-limit <n>      Max rows to print to stdout (default: 100; use -o to export all).
+  --stdout-limit <n>      Max rows to print to stdout (default: 100; increase to list more).
 
 Does NOT require the app to be running (reads SQLite directly).
 `;
@@ -28,10 +33,17 @@ export async function runLs(argv) {
     const a = argv[i];
     if (a === "--format") format = argv[++i];
     else if (a === "--starred") starredOnly = true;
-    else if (a === "--stdout-limit") stdoutLimit = Number.parseInt(argv[++i], 10);
+    else if (a === "--stdout-limit")
+      stdoutLimit = Number.parseInt(argv[++i], 10);
     else fail(`unknown option: ${a}`);
   }
 
+  if (
+    !Number.isSafeInteger(stdoutLimit) ||
+    stdoutLimit < 1 ||
+    stdoutLimit > 100000
+  )
+    fail("--stdout-limit must be an integer from 1 to 100000");
   if (format !== "json" && format !== "table") {
     fail(`invalid --format "${format}" (use json or table)`);
   }
@@ -81,13 +93,23 @@ export async function runLs(argv) {
       if (scenes.length === 0) {
         process.stdout.write("(no scenes)\n");
       } else {
-        const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n));
+        const trunc = (s, n) =>
+          s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n);
         process.stdout.write(
-          `${"id".padEnd(13)} ${"name".padEnd(28)} ${"★".padEnd(2)} ${"KB".padStart(6)}  updated\n`,
+          `${"id".padEnd(13)} ${"name".padEnd(28)} ${"★".padEnd(
+            2,
+          )} ${"KB".padStart(6)}  updated\n`,
         );
         for (const s of scenes) {
           process.stdout.write(
-            `${trunc(s.id, 13)} ${trunc(s.name, 28)} ${s.starred ? "★" : " "} ${(s.sizeBytes / 1024).toFixed(1).padStart(6)}  ${new Date(s.updatedAt).toISOString().slice(0, 19).replace("T", " ")}\n`,
+            `${trunc(s.id, 13)} ${trunc(s.name, 28)} ${
+              s.starred ? "★" : " "
+            } ${(s.sizeBytes / 1024).toFixed(1).padStart(6)}  ${new Date(
+              s.updatedAt,
+            )
+              .toISOString()
+              .slice(0, 19)
+              .replace("T", " ")}\n`,
           );
         }
         process.stdout.write(`\n(${scenes.length} of ${total} scenes)\n`);
@@ -98,7 +120,12 @@ export async function runLs(argv) {
       successEnvelope({
         command: "ls",
         message: `${scenes.length} scene(s)${starredOnly ? " (starred)" : ""}`,
-        data: { scenes, count: scenes.length, total, truncated: total > scenes.length },
+        data: {
+          scenes,
+          count: scenes.length,
+          total,
+          truncated: total > scenes.length,
+        },
       }),
     );
   } finally {

@@ -1,8 +1,14 @@
+import { parseScene } from "../lib/scene.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
 
 import { openDb, dbExists, uuid } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
@@ -53,30 +59,7 @@ export async function runImport(argv) {
   }
 
   // Parse & validate the .excalidraw file.
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(file, "utf8"));
-  } catch (e) {
-    fail(`invalid JSON in ${file}: ${e.message}`);
-  }
-  // Accept both the full envelope and a bare elements array.
-  const elements = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed.elements)
-      ? parsed.elements
-      : null;
-  if (!elements) {
-    fail(
-      `not a valid .excalidraw file (no elements array): ${file}`,
-      errorEnvelope({
-        command: "import",
-        message: "invalid excalidraw format",
-        code: "EFORMAT",
-      }),
-    );
-  }
-  const appState = parsed.appState ?? {};
-  const files = parsed.files ?? {};
+  const { elements, appState, files } = parseScene(readFileSync(file, "utf8"));
   const sceneName = name ?? basename(file, ".excalidraw");
   const now = Date.now();
   const id = uuid();

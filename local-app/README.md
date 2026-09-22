@@ -5,9 +5,7 @@ Built on top of the upstream [excalidraw](https://github.com/excalidraw/excalidr
 editor (MIT), wrapped in a Tauri 2 shell with SQLite persistence and an IPC
 render channel.
 
-See `~/Desktop/Excalidraw-Local-PRD.md` for the full product spec.
-
-## What works (v1.0)
+## Features (v0.2)
 
 - **GUI**: full Excalidraw editor in a desktop window.
 - **Multi-tab**: open multiple scenes simultaneously in tabs; switch, close,
@@ -68,7 +66,7 @@ PNG rasterization happens in the webview.
 
 ## Prerequisites
 
-- Node ≥ 18, Yarn 1.x (the monorepo pins `yarn@1.22.22`)
+- Node 22.13+, Yarn 1.x (the monorepo pins `yarn@1.22.22`)
 - Rust toolchain (`rustup`) with the `aarch64-apple-darwin` (or your platform)
   target
 - Tauri CLI 2.x (`cargo install tauri-cli --version "^2" --locked`)
@@ -151,10 +149,10 @@ node $CLI local gen --spec-file org.json --template tree --import --name "组织
 # Templates: mindmap | tree. --import writes straight into the library.
 ```
 
-### Rendering (app must be running)
+### Rendering (automatically starts the app)
 
 ```bash
-# Render a .excalidraw file to PNG (app must be running)
+# Render a .excalidraw file to PNG (automatically starts the app)
 node $CLI local render path/to/scene.excalidraw -o out.png
 node $CLI local render scene.excalidraw --scale 2
 
@@ -185,11 +183,11 @@ Every command prints a JSON status envelope as the **last line of stdout**:
 {"status":"success","command":"render","message":"rendered ... -> png",
  "data":{"output":"/abs/out.png","format":"png","width":2243,"height":2132,
          "mimeType":"image/png","elapsedMs":216},
- "warnings":[],"errors":null,"meta":{"appVersion":"0.1.0","time":"..."}}
+ "warnings":[],"errors":null,"meta":{"appVersion":"0.2.0","time":"..."}}
 ```
 
-`render` fails fast with `EAPPNOTRUNNING` if the app isn't running. Library
-commands fail with `ENODB` if the db hasn't been initialized (run the app once).
+`render` starts the installed App and waits for its render interface. If startup
+fails, it returns `EAPPNOTRUNNING`. Library commands fail with `ENODB` if the db hasn't been initialized (run the app once).
 
 ## Where data lives
 
@@ -199,7 +197,8 @@ commands fail with `ENODB` if the db hasn't been initialized (run the app once).
 | IPC port file | `~/Library/Application Support/com.excalidraw-local.app/ipc.port` |
 | Rendered PNGs (temp) | `$TMPDIR/excal-render-*.png` |
 
-The `.db` file is the single source of truth — copy it to back up or migrate.
+Use SQLite’s backup API (or quit the App and all CLI processes before copying)
+to back up the library consistently, including any committed WAL data.
 
 ## Project layout
 
@@ -211,7 +210,7 @@ local-app/
 ├── src/
 │   ├── main.tsx            # App: layout (Sidebar + TabBar + EditorArea)
 │   ├── tabs.ts             # useTabs: multi-tab state + session restore
-│   ├── folderStore.ts      # disk file access (readDir/read/writeTextFile)
+│   ├── folderStore.ts      # disk reads and atomic native writes
 │   ├── styles.ts           # sidebar/tab-bar inline styles
 │   ├── components/
 │   │   ├── Sidebar.tsx     # file list: search / star / delete / open
@@ -235,6 +234,18 @@ local-app/
 
 ## Not yet implemented (see PRD §6 roadmap)
 
-Folders, tags, full-text search (in-text), version history, more `gen`
-templates (flowchart/grid), in-app rename dialog, theme switcher, and release
-packaging (`tauri build`).
+Tags, full-text search within drawings, version history, and more `gen`
+templates (flowchart/grid).
+
+## v0.2 desktop maintenance
+
+Settings now installs the bundled drawing skill into selected AI clients, with an
+included Node runtime and optional terminal configuration. See
+[release instructions](docs/RELEASING.md) for the standardized signed/notarized
+DMG pipeline and preview builds. The App supports macOS 12.0+.
+
+`render` produces a PNG without changing the library; pass `--save` explicitly
+to save by name. Ambiguous scene names are rejected; use scene IDs for writes.
+
+Validation: `yarn workspace excalidraw-local typecheck`, `test`, `test:cli`, and
+`cargo test --locked --manifest-path local-app/src-tauri/Cargo.toml`.

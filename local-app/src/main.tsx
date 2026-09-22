@@ -1,7 +1,9 @@
 import { StrictMode, useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+
 import type { Theme } from "@excalidraw/element/types";
 
 import { Sidebar } from "./components/Sidebar";
@@ -27,10 +29,16 @@ import "./chrome.css";
  * follows its light/dark theme: toggling `theme--dark` on this root flips every
  * token, and the editor's `onThemeChange` keeps the class in sync.
  *
- * The render IPC listener (for the `excal` CLI) needs the *active* editor's
- * imperative API, so the active tab registers its API here as it mounts.
+ * The active editor flushes its pending snapshot before navigation or exit.
  */
 function App() {
+  const flushRef = useRef<(() => Promise<void>) | null>(null);
+  const flushActive = useCallback(async () => {
+    await flushRef.current?.();
+  }, []);
+  const registerFlush = useCallback((flush: (() => Promise<void>) | null) => {
+    flushRef.current = flush;
+  }, []);
   const {
     tabs,
     activeId,
@@ -41,11 +49,15 @@ function App() {
     newTab,
     closeTab,
     markDirty,
+    markClean,
+    error,
+    setError,
+    busy,
+    prepareExit,
+    syncLibrary,
     renameTab,
-  } = useTabs();
+  } = useTabs(flushActive);
 
-  // The active editor's imperative API — used by the render IPC listener.
-  const activeApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   // Settings panel (CLI install, etc.) open state.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -55,7 +67,9 @@ function App() {
   const [theme, setTheme] = useState<Theme | "system">(() => {
     try {
       const stored = window.localStorage.getItem("excalidraw-theme");
-      if (stored === "dark" || stored === "light") return stored;
+      if (stored === "dark" || stored === "light") {
+        return stored;
+      }
       if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
         return "dark";
       }
@@ -78,38 +92,48 @@ function App() {
 
   // Throttled sidebar refresh: called when any editor changes, or when a
   // CLI-rendered scene is auto-saved into the library.
-  const refreshSidebar = useCallback(
-    (() => {
-      let t: ReturnType<typeof setTimeout> | null = null;
-      return () => {
-        if (t) return;
-        t = setTimeout(() => {
-          setSidebarRefresh((n) => n + 1);
-          t = null;
-        }, 2000); // refresh at most every 2s (thumbnails are cheap to re-read)
-      };
-    })(),
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshSidebar = useCallback(() => {
+    if (refreshTimer.current) {
+      return;
+    }
+    refreshTimer.current = setTimeout(() => {
+      setSidebarRefresh((n) => n + 1);
+      refreshTimer.current = null;
+    }, 300);
+  }, []);
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+      }
+    },
     [],
   );
 
-  // The render IPC listener needs the active API; re-register when it changes.
+  // Render and external-library notifications refresh the sidebar.
   // Pass refreshSidebar so that CLI-rendered scenes (auto-saved into the
   // library) make the sidebar list refresh.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    installRenderListener(refreshSidebar)
+    let cancelled = false;
+    installRenderListener(() => {
+      refreshSidebar();
+      void syncLibrary();
+    })
       .then((fn) => {
-        unlisten = fn;
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
       })
       .catch((e) => console.error("[excal-local] render listener failed", e));
     return () => {
+      cancelled = true;
       unlisten?.();
     };
-  }, [refreshSidebar]);
-
-  const onApiReady = useCallback((api: ExcalidrawImperativeAPI | null) => {
-    activeApiRef.current = api;
-  }, []);
+  }, [refreshSidebar, syncLibrary]);
 
   // Editor → chrome theme sync. Excalidraw reports "light" | "dark" | "system".
   const onThemeChange = useCallback((next: Theme | "system") => {
@@ -126,32 +150,73 @@ function App() {
     refreshSidebar();
   }, [activeTabId, markDirty, refreshSidebar]);
 
+  const onEditorSaved = useCallback(() => {
+    if (activeId) {
+      markClean(activeId);
+    }
+    refreshSidebar();
+  }, [activeId, markClean, refreshSidebar]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    listen("app-exit-requested", async () => {
+      try {
+        await prepareExit();
+        await invoke("app_exit");
+      } catch (e) {
+        setError(`退出前保存失败：${e}`);
+      }
+    })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          cleanup = fn;
+        }
+      })
+      .catch((e) => setError(String(e)));
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [prepareExit, setError]);
+
   if (!bootstrapped) {
     return (
-      <div className={`excalidraw excal-chrome-root${isDark ? " theme--dark" : ""}`}>
+      <div
+        className={`excalidraw excal-chrome-root${
+          isDark ? " theme--dark" : ""
+        }`}
+      >
         <div style={loadingStyle}>Loading Excalidraw Local…</div>
       </div>
     );
   }
 
-  const openTabIds = new Set(tabs.map((t) => t.id));
   const activeTab = tabs.find((t) => t.id === activeId) ?? null;
 
   return (
     <>
       <style>{`html, body, #root { margin: 0; height: 100%; }`}</style>
       <div
-        className={`excalidraw excal-chrome-root${isDark ? " theme--dark" : ""}`}
+        className={`excalidraw excal-chrome-root${
+          isDark ? " theme--dark" : ""
+        }`}
       >
         <div style={appLayoutStyle.root}>
           <Sidebar
             onOpenScene={openScene}
             onOpenFile={openFile}
-            onNew={newTab}
+            onNew={() => {
+              void newTab().then(refreshSidebar);
+            }}
             onOpenSettings={() => setSettingsOpen(true)}
-            openTabIds={openTabIds}
+            activeTabId={activeId}
             refreshKey={sidebarRefresh}
             onSceneRenamed={renameTab}
+            beforeMutation={flushActive}
+            onSceneDeleted={(id) => closeTab(`library:${id}`)}
           />
           <div style={appLayoutStyle.main}>
             <TabBar
@@ -159,17 +224,45 @@ function App() {
               activeId={activeId}
               onSelect={setActiveId}
               onClose={closeTab}
-              onNew={newTab}
+              onNew={() => {
+                void newTab().then(refreshSidebar);
+              }}
             />
-            <div style={appLayoutStyle.editorArea}>
+            {error && (
+              <div className="excal-error-banner" role="alert">
+                {error}
+                <button
+                  className="excal-btn"
+                  onClick={() => {
+                    void flushActive()
+                      .then(() => setError(null))
+                      .catch(() => {});
+                  }}
+                >
+                  重试保存
+                </button>
+              </div>
+            )}
+            {busy && (
+              <div role="status" className="excal-operation-status">
+                正在保存并切换…
+              </div>
+            )}
+            <div
+              inert={busy}
+              aria-busy={busy}
+              style={appLayoutStyle.editorArea}
+            >
               {/* Only mount the active tab's editor; others unmount (data persists). */}
               {activeTab && (
                 <EditorPane
-                  key={activeTab.id}
+                  key={`${activeTab.id}:${activeTab.revision}`}
                   kind={activeTab.kind}
                   refId={activeTab.refId}
                   scene={activeTab.scene}
-                  onApiReady={onApiReady}
+                  registerFlush={registerFlush}
+                  onSaved={onEditorSaved}
+                  onError={setError}
                   onChange={onEditorChange}
                   onThemeChange={onThemeChange}
                 />

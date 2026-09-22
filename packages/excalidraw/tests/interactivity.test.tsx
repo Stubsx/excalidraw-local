@@ -22,7 +22,7 @@ import {
   waitFor,
 } from "./test-utils";
 
-import type { MockInstance } from "vitest";
+import type { Mock, MockInstance } from "vitest";
 
 import type { ExcalidrawProps } from "../types";
 
@@ -875,7 +875,7 @@ describe("interaction={false} ui={false}", () => {
 });
 
 describe("interaction={{ enabled: { links } }}", () => {
-  let onLinkOpenSpy: ReturnType<typeof vi.fn>;
+  let onLinkOpenSpy: Mock<NonNullable<ExcalidrawProps["onLinkOpen"]>>;
   let windowOpenSpy: MockInstance<typeof window.open>;
 
   // prevent default inside the handler so the editor doesn't call

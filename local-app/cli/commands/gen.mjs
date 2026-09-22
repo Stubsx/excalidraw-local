@@ -4,7 +4,12 @@ import { dirname } from "node:path";
 import { generateMindmap } from "../generators/mindmap.mjs";
 import { generateTree } from "../generators/tree.mjs";
 import { openDb, dbExists, uuid } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
@@ -80,11 +85,18 @@ export async function runGen(argv) {
     fail(`invalid spec JSON: ${e.message}`);
   }
 
+  if (!spec || typeof spec !== "object" || Array.isArray(spec))
+    fail("spec must be a JSON object");
+  if (p.specFile && p.jsonInline)
+    fail("Choose --spec-file or --json, not both");
+  if (p.output && p.doImport) fail("Choose output file or --import, not both");
   const tplKey = p.template ?? spec.template ?? "mindmap";
-  const tpl = TEMPLATES[tplKey];
+  const tpl = Object.hasOwn(TEMPLATES, tplKey) ? TEMPLATES[tplKey] : null;
   if (!tpl) {
     fail(
-      `unknown template "${tplKey}" (available: ${Object.keys(TEMPLATES).join(", ")})`,
+      `unknown template "${tplKey}" (available: ${Object.keys(TEMPLATES).join(
+        ", ",
+      )})`,
       errorEnvelope({
         command: "gen",
         message: `unknown template: ${tplKey}`,
@@ -138,7 +150,12 @@ export async function runGen(argv) {
       successEnvelope({
         command: "gen",
         message: `generated ${tplKey} (${elementCount} elements) -> library "${sceneName}"`,
-        data: { sceneId: id, name: sceneName, template: tplKey, elements: elementCount },
+        data: {
+          sceneId: id,
+          name: sceneName,
+          template: tplKey,
+          elements: elementCount,
+        },
       }),
     );
     // Tell the running app to refresh its sidebar (no-op if app isn't running).

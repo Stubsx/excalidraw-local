@@ -13,16 +13,23 @@ import { join } from "node:path";
 const APP_IDENTIFIER = "com.excalidraw-local.app";
 
 function appConfigDir() {
+  if (process.env.EXCALIDRAW_DATA_DIR) return process.env.EXCALIDRAW_DATA_DIR;
   const home = homedir();
   const platform = process.platform;
   if (platform === "darwin") {
     return join(home, "Library", "Application Support", APP_IDENTIFIER);
   }
   if (platform === "win32") {
-    return join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), APP_IDENTIFIER);
+    return join(
+      process.env.APPDATA ?? join(home, "AppData", "Roaming"),
+      APP_IDENTIFIER,
+    );
   }
   // linux & fallback
-  return join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), APP_IDENTIFIER);
+  return join(
+    process.env.XDG_CONFIG_HOME ?? join(home, ".config"),
+    APP_IDENTIFIER,
+  );
 }
 
 /** @returns {number|null} the IPC port, or null if the app isn't running. */
@@ -31,7 +38,7 @@ export function getPort() {
   if (!existsSync(portFile)) return null;
   const raw = readFileSync(portFile, "utf8").trim();
   const port = Number.parseInt(raw, 10);
-  return Number.isFinite(port) && port > 0 ? port : null;
+  return Number.isFinite(port) && port > 0 && port <= 65535 ? port : null;
 }
 
 /** @returns {string} the AppConfig dir (for diagnostics). */
@@ -48,6 +55,7 @@ export async function ping(port) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/ping`, {
       method: "POST",
+      signal: AbortSignal.timeout(2000),
     });
     return res.ok;
   } catch {
@@ -65,7 +73,8 @@ export async function ping(port) {
 export async function requestRender(port, body) {
   const res = await fetch(`http://127.0.0.1:${port}/render`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: ipcHeaders(),
+    signal: AbortSignal.timeout(65000),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -94,11 +103,21 @@ export async function notifyLibraryChanged(kind = "library-changed") {
   try {
     await fetch(`http://127.0.0.1:${port}/notify`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: ipcHeaders(),
+      signal: AbortSignal.timeout(2000),
       body: JSON.stringify({ type: kind }),
     });
   } catch {
     // App may have just quit, or still starting up. Silently ignore — the
     // write itself already succeeded (it went to SQLite directly).
   }
+}
+
+function ipcHeaders() {
+  const token = readFileSync(join(appConfigDir(), "ipc.token"), "utf8").trim();
+  if (!token) throw new Error("请重新启动 Excalidraw Local 初始化本地连接。");
+  return {
+    "content-type": "application/json",
+    authorization: `Bearer ${token}`,
+  };
 }

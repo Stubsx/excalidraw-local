@@ -68,7 +68,7 @@ export function estimateTextWidth(text, fontSize) {
 const DEFAULT_STYLE = {
   strokeColor: "#1e1e1e",
   backgroundColor: "transparent",
-  fillStyle: "hachure",
+  fillStyle: "solid",
   strokeWidth: 1,
   strokeStyle: "solid",
   roughness: 1,
@@ -147,6 +147,7 @@ export function textInContainer(container, text, opts = {}) {
       verticalAlign: "middle",
       containerId: container.id,
       originalText: text, // CRITICAL: must match `text` per SKILL.md
+      lineHeight: 1.25,
       baseline: lineHeight * 0.85,
       ...opts,
     },
@@ -172,6 +173,7 @@ export function text(x, y, str, opts = {}) {
     textAlign: opts.textAlign ?? "left",
     verticalAlign: "top",
     originalText: str,
+    lineHeight: 1.25,
     baseline: lineHeight * 0.85,
     ...opts,
   });
@@ -185,26 +187,58 @@ export function text(x, y, str, opts = {}) {
  * registers on their boundElements — so the arrow follows if they move.
  */
 export function arrow(from, to, opts = {}) {
-  // Anchor at the from-element's center; compute end relative to it.
   const fromCx = from.x + from.width / 2;
   const fromCy = from.y + from.height / 2;
   const toCx = to.x + to.width / 2;
   const toCy = to.y + to.height / 2;
-
-  const a = base("arrow", fromCx, fromCy, Math.abs(toCx - fromCx), Math.abs(toCy - fromCy), {
-    points: [
-      [0, 0],
-      [toCx - fromCx, toCy - fromCy],
+  const dx = toCx - fromCx,
+    dy = toCy - fromCy;
+  const length = Math.hypot(dx, dy) || 1;
+  const edge = (box, vx, vy) => {
+    const rx = box.width / 2,
+      ry = box.height / 2;
+    const ratio =
+      box.type === "ellipse"
+        ? 1 / Math.sqrt((vx / rx) ** 2 + (vy / ry) ** 2)
+        : Math.min(rx / (Math.abs(vx) || 1e-9), ry / (Math.abs(vy) || 1e-9));
+    return [box.x + rx + vx * ratio, box.y + ry + vy * ratio];
+  };
+  const start = edge(from, dx, dy),
+    end = edge(to, -dx, -dy);
+  const startX = start[0] + (dx / length) * 8,
+    startY = start[1] + (dy / length) * 8;
+  const endX = end[0] - (dx / length) * 8,
+    endY = end[1] - (dy / length) * 8;
+  const binding = (box, point) => ({
+    elementId: box.id,
+    mode: "orbit",
+    fixedPoint: [
+      (point[0] - box.x) / box.width,
+      (point[1] - box.y) / box.height,
     ],
-    startBinding: { elementId: from.id, focus: 0, gap: 8 },
-    endBinding: { elementId: to.id, focus: 0, gap: 8 },
-    startArrowhead: null,
-    endArrowhead: "arrow",
-    ...opts,
   });
+
+  const a = base(
+    "arrow",
+    startX,
+    startY,
+    Math.abs(endX - startX),
+    Math.abs(endY - startY),
+    {
+      points: [
+        [0, 0],
+        [endX - startX, endY - startY],
+      ],
+      startBinding: binding(from, start),
+      endBinding: binding(to, end),
+      startArrowhead: null,
+      endArrowhead: "arrow",
+      ...opts,
+    },
+  );
   // width/height must match the point span (absolute).
-  a.width = Math.abs(toCx - fromCx) || 1;
-  a.height = Math.abs(toCy - fromCy) || 1;
+  a.width = Math.abs(endX - startX);
+  a.height = Math.abs(endY - startY);
 
   // Register the arrow on both endpoints so they know about it.
   from.boundElements.push({ id: a.id, type: "arrow" });

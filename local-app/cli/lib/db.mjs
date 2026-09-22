@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -17,15 +18,22 @@ const APP_IDENTIFIER = "com.excalidraw-local.app";
 
 /** @returns {string} the AppConfig dir holding library.db */
 export function appConfigDir() {
+  if (process.env.EXCALIDRAW_DATA_DIR) return process.env.EXCALIDRAW_DATA_DIR;
   const home = homedir();
   const platform = process.platform;
   if (platform === "darwin") {
     return join(home, "Library", "Application Support", APP_IDENTIFIER);
   }
   if (platform === "win32") {
-    return join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), APP_IDENTIFIER);
+    return join(
+      process.env.APPDATA ?? join(home, "AppData", "Roaming"),
+      APP_IDENTIFIER,
+    );
   }
-  return join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), APP_IDENTIFIER);
+  return join(
+    process.env.XDG_CONFIG_HOME ?? join(home, ".config"),
+    APP_IDENTIFIER,
+  );
 }
 
 /** @returns {string} absolute path to library.db */
@@ -51,20 +59,13 @@ export function openDb(opts = {}) {
   }
   const db = new DatabaseSync(dbPath(), { readOnly: opts.readOnly ?? false });
   // WAL-safe for concurrent access with the GUI; enable foreign keys.
-  db.exec("PRAGMA journal_mode=WAL;");
+  if (!opts.readOnly) db.exec("PRAGMA journal_mode=WAL;");
+  db.exec("PRAGMA busy_timeout=5000;");
   db.exec("PRAGMA foreign_keys=ON;");
   return db;
 }
 
 /** Generate a v4 uuid (webview crypto.randomUUID isn't available in older node). */
 export function uuid() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // RFC4122 v4 fallback
-  const b = (n) =>
-    Math.floor(Math.random() * Math.pow(16, n))
-      .toString(16)
-      .padStart(n, "0");
-  return `${b(8)}-${b(4)}-4${b(3)}-a${b(3)}-${b(10)}`.slice(0, 36);
+  return randomUUID();
 }

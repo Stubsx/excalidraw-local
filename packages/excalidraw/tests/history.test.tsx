@@ -13,7 +13,6 @@ import { newElementWith } from "@excalidraw/element";
 import {
   EXPORT_DATA_TYPES,
   MIME_TYPES,
-  ORIG_ID,
   KEYS,
   arrayToMap,
   COLOR_PALETTE,
@@ -72,7 +71,6 @@ import {
   assertSelectedElements,
   render,
   togglePopover,
-  getCloneByOrigId,
   checkpointHistory,
   unmountComponent,
 } from "./test-utils";
@@ -1401,6 +1399,8 @@ describe("history", () => {
         expect.objectContaining({ A: true }),
       );
 
+      const [duplicate1, duplicate2] = h.elements.slice(2);
+      expect(new Set(h.elements.map((element) => element.id)).size).toBe(4);
       Keyboard.undo();
       expect(API.getUndoStack().length).toBe(1);
       expect(API.getRedoStack().length).toBe(1);
@@ -1408,8 +1408,8 @@ describe("history", () => {
       expect(h.elements).toEqual([
         expect.objectContaining({ id: rect1.id, isDeleted: false }),
         expect.objectContaining({ id: rect2.id, isDeleted: false }),
-        expect.objectContaining({ [ORIG_ID]: rect1.id, isDeleted: true }),
-        expect.objectContaining({ [ORIG_ID]: rect2.id, isDeleted: true }),
+        expect.objectContaining({ id: duplicate1.id, isDeleted: true }),
+        expect.objectContaining({ id: duplicate2.id, isDeleted: true }),
       ]);
       expect(h.state.editingGroupId).toBeNull();
       expect(h.state.selectedGroupIds).toEqual({ A: true });
@@ -1421,8 +1421,8 @@ describe("history", () => {
       expect(h.elements).toEqual([
         expect.objectContaining({ id: rect1.id, isDeleted: false }),
         expect.objectContaining({ id: rect2.id, isDeleted: false }),
-        expect.objectContaining({ [ORIG_ID]: rect1.id, isDeleted: false }),
-        expect.objectContaining({ [ORIG_ID]: rect2.id, isDeleted: false }),
+        expect.objectContaining({ id: duplicate1.id, isDeleted: false }),
+        expect.objectContaining({ id: duplicate2.id, isDeleted: false }),
       ]);
       expect(h.state.editingGroupId).toBeNull();
       expect(h.state.selectedGroupIds).not.toEqual(
@@ -1437,20 +1437,29 @@ describe("history", () => {
       expect(API.getUndoStack().length).toBe(2);
       expect(API.getRedoStack().length).toBe(0);
       expect(h.elements.length).toBe(6);
+      const previousIds = new Set([
+        rect1.id,
+        rect2.id,
+        duplicate1.id,
+        duplicate2.id,
+      ]);
+      const newCopies = h.elements.filter(
+        (element) => !previousIds.has(element.id),
+      );
+      expect(newCopies).toHaveLength(2);
+      expect(new Set(h.elements.map((element) => element.id)).size).toBe(6);
+      expect(
+        newCopies.every(
+          (element) => !element.isDeleted && element.type === "rectangle",
+        ),
+      ).toBe(true);
+      assertSelectedElements(newCopies);
       expect(h.elements).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: rect1.id, isDeleted: false }),
           expect.objectContaining({ id: rect2.id, isDeleted: false }),
-          expect.objectContaining({ [ORIG_ID]: rect1.id, isDeleted: true }),
-          expect.objectContaining({ [ORIG_ID]: rect2.id, isDeleted: true }),
-          expect.objectContaining({
-            [ORIG_ID]: getCloneByOrigId(rect1.id)?.id,
-            isDeleted: false,
-          }),
-          expect.objectContaining({
-            [ORIG_ID]: getCloneByOrigId(rect2.id)?.id,
-            isDeleted: false,
-          }),
+          expect.objectContaining({ id: duplicate1.id, isDeleted: true }),
+          expect.objectContaining({ id: duplicate2.id, isDeleted: true }),
         ]),
       );
       expect(h.state.editingGroupId).toBeNull();

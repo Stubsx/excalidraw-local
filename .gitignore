@@ -34,9 +34,18 @@ local-app/node_modules/
 local-app/dist/
 local-app/dist-release/
 local-app/src-tauri/gen/
-# SQLite runtime files (the .db itself is kept for portability)
+# SQLite runtime files
 *.db-shm
 *.db-wal
 
 # ZCode CLI session state (transient, per-session)
 .zcode/
+
+# Local runtime, signing credentials, and user data are never source artifacts.
+local-app/runtime/
+*.db
+*.sqlite
+*.p12
+*.p8
+*.mobileprovision
+.env.release

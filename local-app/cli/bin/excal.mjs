@@ -18,7 +18,7 @@ import { runPut } from "../commands/put.mjs";
 import { runMv } from "../commands/mv.mjs";
 import { runRm } from "../commands/rm.mjs";
 import { runGen } from "../commands/gen.mjs";
-import { emit, successEnvelope } from "../lib/envelope.mjs";
+import { emit, successEnvelope, errorEnvelope } from "../lib/envelope.mjs";
 
 const HELP = `\
 excal — CLI for Excalidraw Local
@@ -41,7 +41,7 @@ Commands (local):
     rm          Remove a scene (soft-delete by default, --purge to erase).
     gen         Generate a scene from a declarative spec (mindmap/tree).
 
-  Rendering (NEEDS the app running — renders in its webview):
+  Rendering (automatically starts the app and renders in its webview):
     render      Render a .excalidraw file or scene to PNG.
 
   help          Show this help.
@@ -55,7 +55,7 @@ Examples:
   excal local put "架构图" --file edited.excalidraw      # write content back
   excal local mv "架构图" --name "新架构图"
   excal local rm old-draft
-  excal local render out.excalidraw -o out.png      # app must be running
+  excal local render out.excalidraw -o out.png      # starts the installed app
 
 Every command prints a JSON status envelope as the last line of stdout.
 `;
@@ -78,14 +78,29 @@ async function main() {
     process.exit(2);
   }
 
-  if (!command || command === "help" || command === "-h" || command === "--help") {
+  if (
+    !command ||
+    command === "help" ||
+    command === "-h" ||
+    command === "--help"
+  ) {
     process.stdout.write(HELP);
     emit(
       successEnvelope({
         command: "help",
         message: "excal local commands",
         data: {
-          commands: ["ls", "get", "import", "put", "mv", "rm", "gen", "render", "help"],
+          commands: [
+            "ls",
+            "get",
+            "import",
+            "put",
+            "mv",
+            "rm",
+            "gen",
+            "render",
+            "help",
+          ],
           needsApp: ["render"],
           standalone: ["ls", "get", "import", "put", "mv", "rm", "gen"],
           templates: ["mindmap", "tree"],
@@ -95,6 +110,35 @@ async function main() {
     return;
   }
 
+  const valueOptions = new Set([
+    "--name",
+    "--file",
+    "-f",
+    "-o",
+    "--output",
+    "--scene-id",
+    "--format",
+    "--scale",
+    "--template",
+    "--json",
+    "--spec-file",
+    "--limit",
+    "--stdout-limit",
+    "--search",
+  ]);
+  for (let i = 0; i < rest.length; i++) {
+    if (valueOptions.has(rest[i])) {
+      if (!rest[i + 1] || rest[i + 1].startsWith("--") || !rest[i + 1].trim())
+        throw new Error(`Missing value for ${rest[i]}`);
+      i++;
+    }
+  }
+  if (
+    command === "mv" &&
+    rest.filter((a) => ["--name", "--star", "--unstar"].includes(a)).length !==
+      1
+  )
+    throw new Error("Choose exactly one of --name / --star / --unstar");
   switch (command) {
     case "render":
       await runRender(rest);
@@ -128,6 +172,12 @@ async function main() {
 }
 
 main().catch((e) => {
-  process.stderr.write(`excal: unexpected error: ${e?.stack ?? e}\n`);
+  emit(
+    errorEnvelope({
+      command: process.argv[3] ?? "unknown",
+      message: e?.message ?? String(e),
+      code: "ECLI",
+    }),
+  );
   process.exit(1);
 });

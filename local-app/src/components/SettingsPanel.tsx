@@ -1,392 +1,313 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { CloseIcon } from "../icons";
-import { COLORS } from "../styles";
 
-/** Mirrors src-tauri/src/cli_install.rs `CliStatus` (camelCase via serde). */
-interface CliStatus {
-  bundledPath: string | null;
+interface Target {
+  id: string;
+  name: string;
+  path: string;
+  detected: boolean;
   installed: boolean;
-  installedPath: string | null;
-  nodePresent: boolean;
-  nodeVersion: string | null;
-  nodeOk: boolean;
-  recommendedDir: string | null;
-  recommendedDirOnPath: boolean;
+  existing: boolean;
 }
-
-interface InstallResult {
-  success: boolean;
-  linkPath: string | null;
-  target: string | null;
-  needsPathHint: boolean;
-  message: string;
-}
-
-/** Latest Node v22 LTS resolved from nodejs.org/dist/index.json. */
-interface NodeVersionInfo {
+interface Status {
   version: string;
-  lts: string | null;
-  isFallback: boolean;
+  runtimeReady: boolean;
+  cliInstalled: boolean;
+  cliPath: string;
+  targets: Target[];
+  defaultShell: string;
 }
-
-/** Mirrors src-tauri/src/cli_install.rs `NodeInstallProgress`. */
-interface NodeInstallProgress {
-  stage: "resolving" | "downloading" | "installing" | "done" | "error";
-  percent: number | null;
+interface Result {
+  installed: string[];
+  backups: string[];
+  cliPath: string;
   message: string;
 }
-
-interface NodeInstallResult {
-  success: boolean;
-  version: string | null;
-  message: string;
-}
-
-interface SettingsPanelProps {
+interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-/**
- * Settings panel — currently hosts the "excal CLI" installer.
- *
- * Renders as a right-side drawer over the editor area. The CLI ships inside the
- * app bundle; here the user can symlink it onto their PATH with one click,
- * check Node availability, and see copy-paste-ready PATH hints.
- */
-export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const [status, setStatus] = useState<CliStatus | null>(null);
+export function SettingsPanel({ open, onClose }: Props) {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [selected, setSelected] = useState<string[]>(["agents"]);
+  const [shell, setShell] = useState("none");
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  // Node install state
-  const [nodeVersion, setNodeVersion] = useState<NodeVersionInfo | null>(null);
-  const [nodeProgress, setNodeProgress] = useState<NodeInstallProgress | null>(null);
-
-  // True while a Node install is in flight (any non-terminal stage).
-  const nodeBusy =
-    nodeProgress !== null &&
-    nodeProgress.stage !== "done" &&
-    nodeProgress.stage !== "error";
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const panel = useRef<HTMLElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const generation = useRef(0);
 
   const refresh = useCallback(async () => {
+    const ticket = ++generation.current;
+    setScanning(true);
+    setError(null);
     try {
-      const s = await invoke<CliStatus>("cli_status");
-      setStatus(s);
+      const value = await invoke<Status>("setup_status");
+      if (generation.current === ticket) {
+        setStatus(value);
+      }
     } catch (e) {
-      setToast(`状态检测失败: ${e}`);
+      if (generation.current === ticket) {
+        setError(String(e));
+      }
+    } finally {
+      if (generation.current === ticket) {
+        setScanning(false);
+      }
     }
   }, []);
-
-  // Refresh status + pre-resolve the Node version whenever the panel opens.
+  const invalidate = useCallback(() => {
+    generation.current++;
+  }, []);
   useEffect(() => {
     if (open) {
-      setToast(null);
-      setNodeProgress(null);
-      refresh();
-      // Pre-resolve so the button can show "安装 Node v22.x.x (LTS)".
-      invoke<NodeVersionInfo>("cli_resolve_node_version")
-        .then(setNodeVersion)
-        .catch(() => setNodeVersion(null));
+      void refresh();
+      setResult(null);
     }
-  }, [open, refresh]);
-
-  // Listen for install-progress events while the panel is open.
-  useEffect(() => {
-    if (!open) return;
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-    listen<NodeInstallProgress>("node-install-progress", (e) => {
-      if (cancelled) return;
-      setNodeProgress(e.payload);
-      // On done, refresh so nodeOk flips and the install button disappears.
-      if (e.payload.stage === "done") {
-        refresh();
-      }
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
     return () => {
-      cancelled = true;
-      unlisten?.();
+      invalidate();
     };
-  }, [open, refresh]);
-
-  const handleInstall = useCallback(async () => {
-    setBusy(true);
-    setToast(null);
-    try {
-      const r = await invoke<InstallResult>("cli_install", {});
-      setToast(r.message);
-      refresh();
-    } catch (e) {
-      setToast(`安装失败: ${e}`);
-    } finally {
-      setBusy(false);
+  }, [open, refresh, invalidate]);
+  useEffect(() => {
+    if (!open) {
+      return;
     }
-  }, [refresh]);
-
-  const handleUninstall = useCallback(async () => {
-    setBusy(true);
-    setToast(null);
-    try {
-      const r = await invoke<InstallResult>("cli_uninstall", {});
-      setToast(r.message);
-      refresh();
-    } catch (e) {
-      setToast(`卸载失败: ${e}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [refresh]);
-
-  const handleInstallNode = useCallback(async () => {
-    setToast(null);
-    // Immediate feedback before the first progress event arrives.
-    setNodeProgress({
-      stage: "resolving",
-      percent: null,
-      message: "查询最新 Node 版本…",
-    });
-    try {
-      const r = await invoke<NodeInstallResult>("cli_install_node", {});
-      if (r.success) {
-        setToast(`Node ${r.version ?? ""} 安装成功`);
-        refresh();
-      } else {
-        setNodeProgress({
-          stage: "error",
-          percent: null,
-          message: r.message,
-        });
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButton.current?.focus();
+    const keydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        if (!busy) {
+          onClose();
+        }
       }
-    } catch (e) {
-      setNodeProgress({
-        stage: "error",
-        percent: null,
-        message: `安装失败: ${e}`,
-      });
-    }
-  }, [refresh]);
-
-  // PATH hint command shown when install dir isn't on PATH.
-  const pathHintCmd =
-    status?.recommendedDir && !status.recommendedDirOnPath
-      ? `echo 'export PATH="${status.recommendedDir}:$PATH"' >> ~/.zshrc`
-      : null;
-
-  const copyPathHint = useCallback(async () => {
-    if (!pathHintCmd) return;
+      if (e.key === "Tab") {
+        const controls = panel.current?.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, a[href]",
+        );
+        if (!controls?.length) {
+          return;
+        }
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", keydown, true);
+    return () => {
+      document.removeEventListener("keydown", keydown, true);
+      previouslyFocused?.focus();
+    };
+  }, [open, onClose, busy]);
+  const install = async () => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
     try {
-      await navigator.clipboard.writeText(pathHintCmd);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard may be unavailable; ignore
+      const response = await invoke<Result>("setup_install", {
+        targets: selected,
+        shell,
+      });
+      setResult(response);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+      await refresh();
+      setError(String(e));
+    } finally {
+      setBusy(false);
     }
-  }, [pathHintCmd]);
-
-  if (!open) return null;
-
+  };
+  if (!open) {
+    return null;
+  }
   return (
     <>
-      {/* Backdrop — clicking it closes the panel. */}
-      <div className="excal-settings-backdrop" onClick={onClose} />
-      <aside className="excal-settings-panel">
+      <div
+        className="excal-settings-backdrop"
+        onClick={() => {
+          if (!busy) {
+            onClose();
+          }
+        }}
+      />
+      <aside
+        ref={panel}
+        className="excal-settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
         <header className="excal-settings-header">
-          <h2>设置</h2>
+          <h2 id="settings-title">设置</h2>
           <button
+            ref={closeButton}
             className="excal-btn excal-btn--icon excal-btn--ghost"
-            title="关闭"
+            title="关闭设置"
+            disabled={busy}
             onClick={onClose}
           >
             <CloseIcon />
           </button>
         </header>
-
         <div className="excal-settings-body">
-          {/* ---------------- excal CLI section ---------------- */}
-          <section className="excal-settings-section">
-            <h3>命令行工具 <code>excal</code></h3>
-            <p className="excal-settings-desc">
-              把随 app 分发的 <code>excal</code> 命令安装到终端，即可在命令行
-              渲染图、管理资料库、配合脚本/Agent 自动化。
+          <section className="excal-skill-intro">
+            <span className="excal-settings-eyebrow">EXCALIDRAW × AI</span>
+            <h3>
+              让你的 AI 助手
+              <br />
+              直接画进本地资料库
+            </h3>
+            <p>
+              把绘图技能安装到常用客户端。用一句话生成流程图、修改已有图稿、导出清晰图片，完成后还能在这里继续编辑。
             </p>
-
-            {/* status rows */}
-            <ul className="excal-status-list">
-              <StatusRow
-                ok={status?.installed ?? false}
-                label="excal 命令"
-                value={
-                  status?.installed
-                    ? status.installedPath ?? "已安装"
-                    : "未安装"
-                }
-              />
-              <StatusRow
-                ok={status?.nodeOk ?? false}
-                label="Node.js（CLI 依赖）"
-                value={
-                  status?.nodePresent
-                    ? `${status.nodeVersion}${status.nodeOk ? "" : "（需 ≥ 22.5）"}`
-                    : "未检测到 Node"
-                }
-                hint={
-                  status?.nodePresent
-                    ? status.nodeOk
-                      ? null
-                      : "点击下方按钮一键升级"
-                    : "点击下方按钮一键安装"
-                }
-              />
-            </ul>
-
-            {/* ---------------- Node install (only when needed) ---------------- */}
-            {status && !status.nodeOk && (
-              <div className="excal-node-install">
-                <button
-                  className="excal-btn excal-btn--primary"
-                  onClick={handleInstallNode}
-                  disabled={nodeBusy}
-                >
-                  {nodeBusy
-                    ? nodeProgress?.message ?? "处理中…"
-                    : nodeVersion
-                      ? `安装 Node ${nodeVersion.version}${nodeVersion.lts ? `（${nodeVersion.lts} LTS）` : ""}`
-                      : "安装 Node.js（官方 LTS）"}
-                </button>
-                <p className="excal-settings-desc">
-                  {`下载官方 Node.js v22 LTS 安装包（约 95 MB），系统会弹窗要求输入开机密码授权安装。${nodeVersion?.isFallback ? "（版本查询失败，使用内置版本）" : ""}`}
-                </p>
-
-                {/* progress bar */}
-                {nodeProgress &&
-                  nodeProgress.stage !== "done" &&
-                  nodeProgress.stage !== "error" && (
-                    <div className="excal-progress">
-                      <div className="excal-progress-track">
-                        <div
-                          className="excal-progress-bar"
-                          style={{
-                            width: `${nodeProgress.percent ?? (nodeProgress.stage === "installing" ? 100 : 30)}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="excal-progress-label">
-                        {nodeProgress.message}
-                      </span>
-                    </div>
-                  )}
-
-                {/* error message */}
-                {nodeProgress?.stage === "error" && (
-                  <div className="excal-settings-toast">{nodeProgress.message}</div>
-                )}
-              </div>
-            )}
-
-            {/* actions */}
-            <div className="excal-settings-actions">
-              {status?.installed ? (
-                <button
-                  className="excal-btn"
-                  onClick={handleUninstall}
-                  disabled={busy}
-                >
-                  卸载
-                </button>
-              ) : (
-                <button
-                  className="excal-btn excal-btn--primary"
-                  onClick={handleInstall}
-                  disabled={busy || !status?.bundledPath}
-                  title={
-                    !status?.bundledPath
-                      ? "未在 bundle 内找到 CLI 资源"
-                      : undefined
-                  }
-                >
-                  {busy ? "处理中…" : "安装到 PATH"}
-                </button>
-              )}
+            <div className="excal-skill-example">
+              “帮我画一张产品上线流程图，存到资料库。”
+            </div>
+            <div className="excal-skill-facts">
+              <span>本机存储</span>
+              <span>自动准备依赖</span>
+              <span>无需管理员权限</span>
+            </div>
+          </section>
+          <section className="excal-settings-section">
+            <div className="excal-section-title">
+              <h3>1. 选择 AI 客户端</h3>
               <button
                 className="excal-btn excal-btn--ghost"
+                disabled={busy || scanning}
                 onClick={refresh}
-                disabled={busy}
               >
-                重新检测
+                {scanning ? "检测中…" : "重新扫描"}
               </button>
             </div>
-
-            {/* PATH hint */}
-            {pathHintCmd && (
-              <div className="excal-pathhint">
-                <p>
-                  已安装到 <code>{status?.recommendedDir}</code>，但该目录不在
-                  PATH 中。把下面这行加到 <code>~/.zshrc</code> 后重开终端：
-                </p>
-                <pre className="excal-codeblock">
-                  <code>{pathHintCmd}</code>
-                </pre>
-                <button
-                  className="excal-btn excal-btn--ghost"
-                  onClick={copyPathHint}
+            <p className="excal-settings-desc">
+              推荐使用通用目录。Kimi
+              或需要独立配置的客户端，可单独选择。已有同名技能会先备份。
+            </p>
+            <div className="excal-target-list">
+              {status?.targets.map((target) => (
+                <label
+                  key={target.id}
+                  className={`excal-target${
+                    selected.includes(target.id)
+                      ? " excal-target--selected"
+                      : ""
+                  }`}
                 >
-                  {copied ? "已复制 ✓" : "复制命令"}
-                </button>
-              </div>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(target.id)}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setSelected((prev) =>
+                        e.target.checked
+                          ? [...prev, target.id]
+                          : prev.filter((id) => id !== target.id),
+                      )
+                    }
+                  />
+                  <span className="excal-target-copy">
+                    <strong>{target.name}</strong>
+                    <small>{target.path}</small>
+                  </span>
+                  <span className="excal-target-state">
+                    {target.installed
+                      ? "已安装"
+                      : target.existing
+                      ? "已有技能"
+                      : target.detected
+                      ? "已检测到"
+                      : target.id === "agents"
+                      ? "推荐"
+                      : "未检测到"}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {!status && !scanning && (
+              <p className="excal-settings-desc">
+                尚未获取安装状态，请重新扫描。
+              </p>
             )}
-
-            {/* toast */}
-            {toast && <div className="excal-settings-toast">{toast}</div>}
-
-            {/* usage */}
-            <details className="excal-settings-usage">
-              <summary>用法示例</summary>
-              <pre className="excal-codeblock">
-                <code>{`excal local ls                      # 列出资料库
-excal local render 图.excalidraw -o 图.png   # 渲染成 PNG
-excal local import 图.excalidraw --name 架构 # 导入资料库
-excal local gen --json '{...}' -o m.excalidraw  # 从 spec 生成`}</code>
-              </pre>
-            </details>
           </section>
+          <section className="excal-settings-section">
+            <h3>2. 终端命令</h3>
+            <p className="excal-settings-desc">
+              技能可直接调用 App 自带工具。若也想在终端输入
+              excal，请选择你使用的终端环境。
+            </p>
+            <select
+              className="excal-input excal-shell-select"
+              aria-label="终端环境"
+              value={shell}
+              disabled={busy}
+              onChange={(e) => setShell(e.target.value)}
+            >
+              <option value="none">仅安装技能，不修改终端配置</option>
+              <option value="zsh">Zsh · macOS 默认终端</option>
+              <option value="bash">Bash</option>
+              <option value="fish">Fish</option>
+            </select>
+            <div className="excal-runtime-status">
+              {status
+                ? status.runtimeReady
+                  ? "✓ 内置运行环境已就绪，无需额外下载"
+                  : "运行环境缺失，请重新下载完整 App"
+                : "正在检查内置运行环境…"}
+            </div>
+          </section>
+          {error && (
+            <div
+              className="excal-settings-toast excal-settings-error"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+          {result && (
+            <div className="excal-install-result" role="status">
+              <strong>✓ 技能已安装</strong>
+              <p>{result.message}</p>
+              {result.backups.length > 0 && (
+                <details>
+                  <summary>查看备份位置</summary>
+                  {result.backups.map((path) => (
+                    <code key={path}>{path}</code>
+                  ))}
+                </details>
+              )}
+            </div>
+          )}
+          <button
+            className="excal-btn excal-btn--primary excal-install-button"
+            disabled={
+              busy || scanning || !status?.runtimeReady || selected.length === 0
+            }
+            onClick={install}
+          >
+            {busy
+              ? "正在安装技能与命令工具…"
+              : result
+              ? "再次安装 / 更新"
+              : `安装到 ${selected.length} 个位置`}
+          </button>
+          <p className="excal-settings-footnote">
+            Excalidraw Local {status?.version ?? ""} · 安装仅写入你的用户目录
+          </p>
         </div>
       </aside>
     </>
-  );
-}
-
-function StatusRow({
-  ok,
-  label,
-  value,
-  hint,
-}: {
-  ok: boolean;
-  label: string;
-  value: string;
-  hint?: string | null;
-}) {
-  return (
-    <li className="excal-status-row">
-      <span
-        className="excal-status-dot"
-        style={{
-          backgroundColor: ok ? "var(--color-primary)" : COLORS.danger,
-        }}
-      />
-      <span className="excal-status-label">{label}</span>
-      <span className="excal-status-value">{value}</span>
-      {hint && <span className="excal-status-hint">{hint}</span>}
-    </li>
   );
 }

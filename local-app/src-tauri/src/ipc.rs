@@ -11,18 +11,23 @@
 //! `<AppConfig>/ipc.port` so the CLI can discover it.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::Write;
 use std::sync::Arc;
 
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{
+    extract::{DefaultBodyLimit, State},
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Json, Router,
+};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{oneshot, Mutex};
 use tokio::net::TcpListener;
+use tokio::sync::{oneshot, Mutex};
 
 /// A pending render request, keyed by requestId.
-type Pending = Lazy<Mutex<HashMap<String, oneshot::Sender<RenderResult>>>>;
+type Pending = Lazy<Mutex<HashMap<String, oneshot::Sender<Result<RenderResult, String>>>>>;
 static PENDING: Pending = Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// What the webview hands back after exportToBlob succeeds.
@@ -86,16 +91,22 @@ struct RenderResponse {
 /// Shared state carried into axum handlers: the Tauri app handle (to emit).
 struct IpcState {
     app: AppHandle,
+    token: String,
 }
 
 /// Start the IPC HTTP server. Call from `setup()`.
 pub async fn start(app: AppHandle) {
-    let state = Arc::new(IpcState { app: app.clone() });
+    let token = uuid::Uuid::new_v4().to_string();
+    let state = Arc::new(IpcState {
+        app: app.clone(),
+        token: token.clone(),
+    });
 
     let router = Router::new()
         .route("/render", post(handle_render))
         .route("/notify", post(handle_notify))
         .route("/ping", post(handle_ping))
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state);
 
     // OS-assigned port on the loopback interface only.
@@ -106,24 +117,28 @@ pub async fn start(app: AppHandle) {
             return;
         }
     };
-    let port = listener
-        .local_addr()
-        .map(|a| a.port())
-        .unwrap_or(0);
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
 
     // Persist the port so the CLI can discover it.
-    if let Err(e) = write_port_file(&app, port) {
+    if let Err(e) = write_port_file(&app, port, &token) {
         eprintln!("[ipc] failed to write ipc.port: {e}");
     }
 
     println!("[ipc] listening on 127.0.0.1:{port}");
-    axum::serve(listener, router.into_make_service())
-        .await
-        .ok();
+    axum::serve(listener, router.into_make_service()).await.ok();
 }
 
-async fn handle_ping() -> &'static str {
-    "pong"
+static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+async fn handle_ping() -> Result<&'static str, StatusCode> {
+    if READY.load(std::sync::atomic::Ordering::SeqCst) {
+        Ok("pong")
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+#[tauri::command]
+pub fn render_ready() {
+    READY.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// CLI write commands (import/mv/rm/put/...) post here after writing SQLite to
@@ -145,57 +160,84 @@ struct NotifyResponse {
 
 async fn handle_notify(
     State(state): State<Arc<IpcState>>,
+    headers: HeaderMap,
     Json(req): Json<NotifyRequest>,
-) -> Json<NotifyResponse> {
+) -> Result<Json<NotifyResponse>, StatusCode> {
+    authorize(&headers, &state.token)?;
     // Emit a global event the webview listens for; it triggers a sidebar
     // refresh. Ignore emit errors (webview may be unavailable).
     let _ = state.app.emit("library-changed", &req.kind);
-    Json(NotifyResponse { status: "ok" })
+    Ok(Json(NotifyResponse { status: "ok" }))
 }
 
 async fn handle_render(
     State(state): State<Arc<IpcState>>,
+    headers: HeaderMap,
     Json(req): Json<RenderRequest>,
-) -> Json<RenderResponse> {
+) -> Result<Json<RenderResponse>, StatusCode> {
+    authorize(&headers, &state.token)?;
+    if req.request_id.is_empty()
+        || req.request_id.len() > 128
+        || req.format != "png"
+        || req.scene_id.is_some() == req.data.is_some()
+        || req
+            .scale
+            .is_some_and(|v| !v.is_finite() || v <= 0.0 || v > 8.0)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     // Set up the response channel BEFORE emitting, so the webview's reply can't
     // race ahead and find no pending entry.
-    let (tx, rx) = oneshot::channel::<RenderResult>();
+    let (tx, rx) = oneshot::channel::<Result<RenderResult, String>>();
     {
         let mut pending = PENDING.lock().await;
+        if pending.len() >= 8 {
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+        if pending.contains_key(&req.request_id) {
+            return Err(StatusCode::CONFLICT);
+        }
         pending.insert(req.request_id.clone(), tx);
     }
 
     // Tell the webview to render. It will call back via `render_done`.
     if let Err(e) = state.app.emit("render-request", &req) {
         remove_pending(&req.request_id).await;
-        return Json(RenderResponse {
+        return Ok(Json(RenderResponse {
             status: "error",
             result: None,
             error: Some(format!("emit failed: {e}")),
-        });
+        }));
     }
 
     // Wait for the webview to deliver the rendered PNG path.
-    match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
-        Ok(Ok(result)) => Json(RenderResponse {
-            status: "success",
-            result: Some(result),
-            error: None,
-        }),
-        Ok(Err(_)) => Json(RenderResponse {
-            status: "error",
-            result: None,
-            error: Some("render channel closed".to_string()),
-        }),
-        Err(_) => {
-            remove_pending(&req.request_id).await;
-            Json(RenderResponse {
+    Ok(
+        match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+            Ok(Ok(Ok(result))) => Json(RenderResponse {
+                status: "success",
+                result: Some(result),
+                error: None,
+            }),
+            Ok(Ok(Err(error))) => Json(RenderResponse {
                 status: "error",
                 result: None,
-                error: Some("render timed out (60s)".to_string()),
-            })
-        }
-    }
+                error: Some(error),
+            }),
+            Ok(Err(_)) => Json(RenderResponse {
+                status: "error",
+                result: None,
+                error: Some("render channel closed".to_string()),
+            }),
+            Err(_) => {
+                remove_pending(&req.request_id).await;
+                Json(RenderResponse {
+                    status: "error",
+                    result: None,
+                    error: Some("render timed out (60s)".to_string()),
+                })
+            }
+        },
+    )
 }
 
 async fn remove_pending(id: &str) {
@@ -217,47 +259,97 @@ pub async fn render_done(
     png: Vec<u8>,
     meta: RenderMeta,
 ) -> Result<RenderResult, String> {
-    let out_path = temp_path();
-    std::fs::write(&out_path, &png).map_err(|e| format!("write png: {e}"))?;
-
-    let result = RenderResult {
-        output: out_path,
-        meta,
+    if png.is_empty() || meta.width == 0 || meta.height == 0 || meta.mime_type != "image/png" {
+        render_failed(request_id, "渲染没有产生有效图片".into()).await;
+        return Err("无效的 PNG".into());
+    }
+    let tx = PENDING
+        .lock()
+        .await
+        .remove(&request_id)
+        .ok_or("请求已经结束")?;
+    let output = (|| -> std::io::Result<String> {
+        let mut file = tempfile::Builder::new()
+            .prefix("excal-render-")
+            .suffix(".png")
+            .tempfile()?;
+        file.write_all(&png)?;
+        let (_, path) = file.keep()?;
+        Ok(path.to_string_lossy().into_owned())
+    })();
+    let output = match output {
+        Ok(path) => path,
+        Err(e) => {
+            let message = format!("write png: {e}");
+            let _ = tx.send(Err(message.clone()));
+            return Err(message);
+        }
     };
+    let result = RenderResult { output, meta };
 
     // Deliver to the waiting HTTP handler (if still around).
-    let tx = PENDING.lock().await.remove(&request_id);
-    if let Some(tx) = tx {
-        let _ = tx.send(result.clone());
+    if tx.send(Ok(result.clone())).is_err() {
+        let _ = std::fs::remove_file(&result.output);
     }
     Ok(result)
 }
 
-fn temp_path() -> String {
-    let id = uuid_v4();
-    // /tmp on macOS; on other platforms std::env::temp_dir is still fine.
-    let mut p: PathBuf = std::env::temp_dir();
-    p.push(format!("excal-render-{id}.png"));
-    p.to_string_lossy().into_owned()
-}
-
-/// Minimal v4 uuid without pulling in a uuid crate dependency.
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{nanos:032x}")
-}
-
 /// Write the bound port to <AppConfig>/ipc.port so the CLI can find it.
-fn write_port_file(app: &AppHandle, port: u16) -> std::io::Result<()> {
+fn write_port_file(app: &AppHandle, port: u16, token: &str) -> std::io::Result<()> {
     let dir = app
         .path()
         .app_config_dir()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("ipc.port");
+    use std::io::Write;
+    let mut secret = tempfile::NamedTempFile::new_in(&dir)?;
+    secret.write_all(token.as_bytes())?;
+    secret.persist(dir.join("ipc.token"))?;
     std::fs::write(path, port.to_string())
+}
+
+fn authorize(headers: &HeaderMap, token: &str) -> Result<(), StatusCode> {
+    if headers.contains_key("origin")
+        || headers.get("authorization").and_then(|v| v.to_str().ok())
+            != Some(&format!("Bearer {token}"))
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn render_failed(request_id: String, error: String) {
+    if let Some(tx) = PENDING.lock().await.remove(&request_id) {
+        let _ = tx.send(Err(error));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn browser_origins_and_missing_tokens_cannot_mutate_the_library() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(
+            authorize(&headers, "test-secret"),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+        headers.insert("authorization", "Bearer test-secret".parse().unwrap());
+        assert!(authorize(&headers, "test-secret").is_ok());
+        headers.insert("origin", "https://example.com".parse().unwrap());
+        assert_eq!(
+            authorize(&headers, "test-secret"),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+    }
+    #[tokio::test]
+    async fn failed_render_resolves_with_an_error_instead_of_an_empty_success() {
+        let (tx, rx) = oneshot::channel();
+        PENDING.lock().await.insert("test-failure".into(), tx);
+        render_failed("test-failure".into(), "invalid scene".into()).await;
+        assert!(matches!(rx.await.unwrap(), Err(message) if message == "invalid scene"));
+        assert!(!PENDING.lock().await.contains_key("test-failure"));
+    }
 }

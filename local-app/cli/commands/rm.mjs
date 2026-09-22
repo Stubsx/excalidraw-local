@@ -1,5 +1,11 @@
+import { findScene } from "../lib/scene.mjs";
 import { openDb, dbExists } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
@@ -47,27 +53,15 @@ export async function runRm(argv) {
   const db = openDb();
   try {
     const query = positional[0];
-    let row = db
-      .prepare("SELECT * FROM scenes WHERE id = ?")
-      .get(query);
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name = ? ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(query);
-    }
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(`%${query}%`);
-    }
+    const row = findScene(db, query, purge);
     if (!row) {
       fail(
         `no scene matches "${query}"`,
-        errorEnvelope({ command: "rm", message: `not found: ${query}`, code: "ENOTFOUND" }),
+        errorEnvelope({
+          command: "rm",
+          message: `not found: ${query}`,
+          code: "ENOTFOUND",
+        }),
       );
     }
 

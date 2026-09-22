@@ -4,11 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { exportToBlob } from "@excalidraw/utils/export";
 import { getNonDeletedElements } from "@excalidraw/element";
 
-import type {
-  AppState,
-  BinaryFiles,
-} from "@excalidraw/excalidraw/types";
+import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
+
+import { parseScene } from "../sceneValidation";
 
 import { getScene, saveSceneByName } from "../db/sceneStore";
 
@@ -44,16 +43,7 @@ interface ParsedScene {
  * and a bare elements array.
  */
 function parseSceneData(raw: string): ParsedScene {
-  const parsed = JSON.parse(raw);
-  if (Array.isArray(parsed)) {
-    // Bare elements array (legacy localStorage form).
-    return { elements: parsed, appState: {}, files: {} };
-  }
-  return {
-    elements: parsed.elements ?? [],
-    appState: parsed.appState ?? {},
-    files: parsed.files ?? {},
-  };
+  return parseScene(raw) as ParsedScene;
 }
 
 /**
@@ -121,9 +111,9 @@ export async function installRenderListener(
 
         // exportBackground must be true to actually paint the white background.
         const appState: Partial<AppState> = {
+          ...scene.appState,
           exportBackground: true,
           exportScale: req.scale ?? 1,
-          ...scene.appState,
         };
 
         const elements = getNonDeletedElements(
@@ -133,6 +123,11 @@ export async function installRenderListener(
           elements,
           appState,
           files: scene.files,
+          getDimensions: (width, height) => ({
+            width: Math.round(width * (req.scale ?? 1)),
+            height: Math.round(height * (req.scale ?? 1)),
+            scale: req.scale ?? 1,
+          }),
         });
 
         const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -140,20 +135,37 @@ export async function installRenderListener(
         // Measure output dimensions via an Image element (cheap, avoids
         // parsing PNG headers manually).
         const url = URL.createObjectURL(blob);
-        const { width, height } = await new Promise<{ width: number; height: number }>(
-          (resolve) => {
-            const img = new Image();
-            img.onload = () => {
-              resolve({ width: img.naturalWidth, height: img.naturalHeight });
-              URL.revokeObjectURL(url);
-            };
-            img.onerror = () => {
-              resolve({ width: 0, height: 0 });
-              URL.revokeObjectURL(url);
-            };
-            img.src = url;
-          },
-        );
+        const { width, height } = await new Promise<{
+          width: number;
+          height: number;
+        }>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            URL.revokeObjectURL(url);
+          };
+          img.onerror = () => {
+            resolve({ width: 0, height: 0 });
+            URL.revokeObjectURL(url);
+          };
+          img.src = url;
+        });
+
+        // CLI render of an arbitrary file: also save it into the library so it
+        // appears in the sidebar. Deduped by name (overwrite if exists). The
+        // --scene-id path skips this (the scene is already in the library).
+        // Report a failed requested write as an error to the CLI.
+        if (req.data && req.name) {
+          try {
+            // Build a thumbnail dataURL from the just-rendered PNG bytes —
+            // zero extra render cost.
+            const thumbnail = bytesToDataURL(bytes, blob.type);
+            await saveSceneByName(req.name, scene, thumbnail);
+            onLibraryChanged?.();
+          } catch (e) {
+            throw new Error(`PNG 已渲染，但保存资料库失败：${e}`);
+          }
+        }
 
         await invoke("render_done", {
           requestId: req.requestId,
@@ -165,37 +177,20 @@ export async function installRenderListener(
           },
         });
 
-        // CLI render of an arbitrary file: also save it into the library so it
-        // appears in the sidebar. Deduped by name (overwrite if exists). The
-        // --scene-id path skips this (the scene is already in the library).
-        // Wrapped so a DB hiccup never breaks the PNG handoff to the CLI.
-        if (req.data && req.name) {
-          try {
-            // Build a thumbnail dataURL from the just-rendered PNG bytes —
-            // zero extra render cost.
-            const thumbnail = bytesToDataURL(bytes, blob.type);
-            await saveSceneByName(req.name, scene, thumbnail);
-            onLibraryChanged?.();
-          } catch (e) {
-            console.warn("[render] library save failed", e);
-          }
-        }
-
         const elapsed = Math.round(performance.now() - started);
         console.info(
           `[render] ${req.requestId} -> ${width}x${height} in ${elapsed}ms`,
         );
       } catch (err) {
-        const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        const msg =
+          err instanceof Error ? `${err.name}: ${err.message}` : String(err);
         logErr(`FAILED: ${msg}`);
         // We still must resolve the pending request on the Rust side, otherwise
-        // the HTTP handler hangs until its 60s timeout. Hand back an empty
-        // payload with a sentinel so the CLI sees a clear failure.
+        // the HTTP handler hangs until its 60s timeout. Return the actual error.
         try {
-          await invoke("render_done", {
+          await invoke("render_failed", {
             requestId: req.requestId,
-            png: new Uint8Array(0),
-            meta: { width: 0, height: 0, mimeType: "application/octet-stream" },
+            error: msg,
           });
         } catch {
           // best effort
@@ -210,10 +205,17 @@ export async function installRenderListener(
   // refresh key; if it's absent we do nothing.
   let unlistenNotify: (() => void) | undefined;
   if (onLibraryChanged) {
-    unlistenNotify = await listen<string>("library-changed", () => {
-      onLibraryChanged();
-    });
+    try {
+      unlistenNotify = await listen<string>("library-changed", () => {
+        onLibraryChanged();
+      });
+    } catch (e) {
+      unlisten();
+      throw e;
+    }
   }
+
+  await invoke("render_ready");
 
   // Aggregate cleanup for both listeners.
   return () => {

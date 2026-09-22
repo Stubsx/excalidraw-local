@@ -7,10 +7,11 @@
 // Stage 3: spawns the axum IPC server in setup() so the `excal` CLI can trigger
 // renders in the webview, and registers the `render_done` callback command.
 
-mod ipc;
 mod cli_install;
+mod files;
+mod ipc;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
 /// The single source-of-truth SQLite connection string.
@@ -48,13 +49,14 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            files::save_scene_file,
+            app_exit,
             ipc::render_done,
+            ipc::render_failed,
+            ipc::render_ready,
             ipc::render_log,
-            cli_install::cli_status,
-            cli_install::cli_install,
-            cli_install::cli_uninstall,
-            cli_install::cli_resolve_node_version,
-            cli_install::cli_install_node
+            cli_install::setup_status,
+            cli_install::setup_install
         ])
         .setup(|app| {
             // Spawn the local IPC HTTP server (for the `excal` CLI render flow).
@@ -67,6 +69,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                if code.is_none() {
+                    api.prevent_exit();
+                    let _ = app_handle.emit("app-exit-requested", ());
+                }
+            }
             // macOS: clicking the dock icon while the window is hidden
             // should bring it back to front (instead of doing nothing).
             #[cfg(target_os = "macos")]
@@ -79,4 +87,9 @@ pub fn run() {
             // Let other events flow through normally.
             let _ = (app_handle, event);
         });
+}
+
+#[tauri::command]
+fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
 }

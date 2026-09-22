@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Excalidraw Local",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.excalidraw-local.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "yarn dev",
-    "beforeBuildCommand": "yarn build"
+    "beforeDevCommand": "node scripts/prepare-runtime.mjs && yarn dev",
+    "beforeBuildCommand": "node scripts/prepare-runtime.mjs && yarn build"
   },
   "app": {
     "windows": [
@@ -22,25 +22,23 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'",
+      "devCsp": null
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "copyright": "© 2026 jabber1. Based on Excalidraw (MIT).",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "resources": {
       "../cli/bin/excal.mjs": "cli/bin/excal.mjs",
       "../cli/commands/": "cli/commands/",
       "../cli/generators/": "cli/generators/",
-      "../cli/lib/": "cli/lib/"
+      "../cli/lib/": "cli/lib/",
+      "../runtime/": "runtime/",
+      "../skill/": "skill/",
+      "../package.json": "package.json"
     },
     "macOS": {
       "minimumSystemVersion": "12.0",

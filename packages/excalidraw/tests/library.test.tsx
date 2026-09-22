@@ -2,7 +2,7 @@ import { act, queryByTestId } from "@testing-library/react";
 import React from "react";
 import { vi } from "vitest";
 
-import { MIME_TYPES, ORIG_ID } from "@excalidraw/common";
+import { MIME_TYPES } from "@excalidraw/common";
 
 import { getCommonBoundingBox } from "@excalidraw/element";
 
@@ -182,7 +182,14 @@ describe("library", () => {
       },
     ]);
     await waitFor(() => {
-      expect(h.elements).toEqual([expect.objectContaining({ [ORIG_ID]: "A" })]);
+      expect(h.elements).toEqual([
+        expect.objectContaining({
+          type: "rectangle",
+          width: 50,
+          height: 30,
+          id: expect.not.stringMatching(/^A$/),
+        }),
+      ]);
     });
   });
 
@@ -213,13 +220,15 @@ describe("library", () => {
     await waitFor(() => {
       expect(h.elements).toEqual([
         expect.objectContaining({
-          [ORIG_ID]: "elem1",
+          type: "rectangle",
+          id: expect.not.stringMatching(/^elem1$/),
         }),
         expect.objectContaining({
           id: expect.not.stringMatching(/^elem1$/),
-          [ORIG_ID]: expect.not.stringMatching(/^\w+$/),
+          type: "rectangle",
         }),
       ]);
+      expect(new Set(h.elements.map((element) => element.id)).size).toBe(2);
     });
   });
 
@@ -235,7 +244,14 @@ describe("library", () => {
       },
     ]);
     await waitFor(() => {
-      expect(h.elements).toEqual([expect.objectContaining({ [ORIG_ID]: "A" })]);
+      expect(h.elements).toEqual([
+        expect.objectContaining({
+          type: "rectangle",
+          width: 50,
+          height: 30,
+          id: expect.not.stringMatching(/^A$/),
+        }),
+      ]);
     });
     // this has a high flake
     // expect(h.state.activeTool.type).toBe("selection");

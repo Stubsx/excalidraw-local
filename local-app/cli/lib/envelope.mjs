@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 /**
  * Standard stdout JSON envelope (mirrors PRD §5.3).
  *
@@ -10,19 +12,15 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+).version;
 
 /**
  * @typedef {{command:string, message:string, data?:any, warnings?:string[], meta?:object}} SuccessArgs
  * @param {SuccessArgs} args
  */
-export function successEnvelope({
-  command,
-  message,
-  data,
-  warnings,
-  meta,
-}) {
+export function successEnvelope({ command, message, data, warnings, meta }) {
   return JSON.stringify({
     status: "success",
     command,
@@ -58,6 +56,12 @@ export function emit(line) {
 /** Print a human-readable error to stderr and exit non-zero. */
 export function fail(stderrMsg, envelopeLine) {
   process.stderr.write(stderrMsg + "\n");
-  if (envelopeLine) emit(envelopeLine);
+  emit(
+    envelopeLine ??
+      errorEnvelope({
+        command: process.argv[3] ?? "unknown",
+        message: stderrMsg,
+      }),
+  );
   process.exit(1);
 }

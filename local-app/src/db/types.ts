@@ -20,19 +20,6 @@ export interface SavedScene {
   updatedAt: number;
 }
 
-/** Raw row shape as returned by the SQL plugin (snake_case columns). */
-interface SceneRow {
-  id: string;
-  name: string;
-  elements_json: string;
-  app_state_json: string;
-  files_json: string;
-  thumbnail: string | null;
-  starred: number;
-  created_at: number;
-  updated_at: number;
-}
-
 /**
  * One entry in the folder history — a directory the user has opened as a
  * "project". Persisted in the `app_state` KV table under key `folder_history`,

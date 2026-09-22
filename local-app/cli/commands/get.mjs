@@ -1,8 +1,14 @@
+import { findScene } from "../lib/scene.mjs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, basename } from "node:path";
 
 import { openDb, dbExists } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 
 const USAGE = `\
 Usage: excal local get <id|name> [-o output.excalidraw]
@@ -50,26 +56,8 @@ export async function runGet(argv) {
   const db = openDb({ readOnly: true });
   try {
     // Try exact id first, then name substring (most recent).
-    let row = db
-      .prepare("SELECT * FROM scenes WHERE id = ? AND is_deleted = 0")
-      .get(query);
-    let matchKind = "id";
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name = ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(query);
-      matchKind = "name(exact)";
-    }
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name LIKE ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(`%${query}%`);
-      matchKind = "name(substring)";
-    }
+    const row = findScene(db, query);
+    const matchKind = "unique";
     if (!row) {
       fail(
         `no scene matches "${query}"`,
@@ -92,7 +80,10 @@ export async function runGet(argv) {
     };
 
     if (!output) {
-      const safeName = (row.name || "scene").replace(/[^\w\u4e00-\u9fa5.-]+/g, "_");
+      const safeName = (row.name || "scene").replace(
+        /[^\w\u4e00-\u9fa5.-]+/g,
+        "_",
+      );
       output = `${safeName}.excalidraw`;
     }
     mkdirSync(dirname(output) || ".", { recursive: true });

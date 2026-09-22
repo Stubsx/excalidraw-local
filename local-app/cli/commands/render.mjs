@@ -1,8 +1,21 @@
-import { readFileSync, existsSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import { basename, extname, resolve, join } from "node:path";
 
-import { getPort, configDir, ping, requestRender, requestId } from "../lib/ipc.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  getPort,
+  configDir,
+  ping,
+  requestRender,
+  requestId,
+} from "../lib/ipc.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 
 const USAGE = `\
 Usage: excal local render <scene.excalidraw> [options]
@@ -17,6 +30,7 @@ Options:
   --scene-id <uuid>       Render a scene from the local library by id.
   -o, --output <path>     Write PNG here (default: <input>.png next to source).
   --format <png|svg>      Output format (default: png; svg not yet supported).
+  --save                 Also save to the library (overwrites a matching name).
   --scale <n>             Export scale, e.g. 2 for retina (default: 1).
 
 Requires the Excalidraw Local app to be running (the render happens in its
@@ -37,6 +51,7 @@ export async function runRender(argv) {
   let output = null;
   let format = "png";
   let scale = 1;
+  let save = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -44,6 +59,8 @@ export async function runRender(argv) {
       sceneId = argv[++i];
     } else if (a === "-o" || a === "--output") {
       output = argv[++i];
+    } else if (a === "--save") {
+      save = true;
     } else if (a === "--format") {
       format = argv[++i];
     } else if (a === "--scale") {
@@ -55,6 +72,9 @@ export async function runRender(argv) {
     }
   }
 
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 8)
+    fail("scale must be between 0 and 8");
+  if (sceneId && positional.length) fail("choose either a file or --scene-id");
   if (format !== "png") {
     fail(`unsupported format "${format}" (only "png" is supported in v0.1)`);
   }
@@ -84,30 +104,28 @@ export async function runRender(argv) {
   }
 
   // --- discover the running app ---
-  const port = getPort();
-  if (!port) {
-    fail(
-      `Excalidraw Local app is not running (no ipc.port in ${configDir()}).\n` +
-        `Start it first:  cd local-app && cargo tauri dev`,
-      errorEnvelope({
-        command: "render",
-        message: "app not running",
-        code: "EAPPNOTRUNNING",
-      }),
-    );
-  }
-
-  const alive = await ping(port);
-  if (!alive) {
-    fail(
-      `app port file exists (${port}) but the server isn't responding.\n` +
-        `The app may still be starting up — retry in a moment.`,
-      errorEnvelope({
-        command: "render",
-        message: "app not responding",
-        code: "EAPPNOTRESPONDING",
-      }),
-    );
+  let port = getPort();
+  if (!port || !(await ping(port))) {
+    if (process.platform !== "darwin") fail("请先启动 Excalidraw Local。");
+    try {
+      await promisify(execFile)("/usr/bin/open", [
+        "-b",
+        "com.excalidraw-local.app",
+      ]);
+    } catch {
+      fail("无法启动 Excalidraw Local，请先安装并打开 App。");
+    }
+    const deadline = Date.now() + 20000;
+    let alive = false;
+    while (Date.now() < deadline) {
+      port = getPort();
+      if (port && (await ping(port))) {
+        alive = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (!alive) fail("App 启动超时，请检查应用窗口后重试。");
   }
 
   // --- request the render ---
@@ -125,7 +143,7 @@ export async function runRender(argv) {
       requestId: requestId(),
       sceneId: sceneId ?? undefined,
       data: data ?? undefined,
-      name: renderName,
+      name: save ? renderName : undefined,
       format,
       scale,
     });
@@ -161,6 +179,7 @@ export async function runRender(argv) {
     const { dirname } = await import("node:path");
     mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, png);
+    unlinkSync(tmpPath);
   }
 
   const elapsedMs = Date.now() - started;

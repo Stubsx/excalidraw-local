@@ -1,4 +1,8 @@
-import { readDir, readTextFile, writeTextFile, exists } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
+
+import { readDir, readTextFile, exists } from "@tauri-apps/plugin-fs";
+
+import { parseScene } from "./sceneValidation";
 
 /**
  * Folder-access layer: browse & edit `.excalidraw` files directly on disk
@@ -32,12 +36,10 @@ export interface FileSceneData {
 export async function listExcalidrawFiles(dir: string): Promise<FolderEntry[]> {
   const entries = await readDir(dir);
   const files = entries
-    .filter(
-      (e) => !e.isDirectory && e.name.endsWith(".excalidraw"),
-    )
+    .filter((e) => !e.isDirectory && e.name.endsWith(".excalidraw"))
     .map((e) => {
       // e.name is the base file name; full path = dir + "/" + name.
-      const fullPath = dir.endsWith("/") ? dir + e.name : dir + "/" + e.name;
+      const fullPath = dir.endsWith("/") ? dir + e.name : `${dir}/${e.name}`;
       return {
         path: fullPath,
         name: e.name.replace(/\.excalidraw$/, ""),
@@ -54,24 +56,7 @@ export async function listExcalidrawFiles(dir: string): Promise<FolderEntry[]> {
  */
 export async function readFileScene(path: string): Promise<FileSceneData> {
   const text = await readTextFile(path);
-  const parsed = JSON.parse(text);
-  if (Array.isArray(parsed)) {
-    return {
-      type: "excalidraw",
-      version: 2,
-      elements: parsed,
-      appState: {},
-      files: {},
-    };
-  }
-  return {
-    type: parsed.type ?? "excalidraw",
-    version: parsed.version ?? 2,
-    source: parsed.source,
-    elements: parsed.elements ?? [],
-    appState: parsed.appState ?? {},
-    files: parsed.files ?? {},
-  };
+  return parseScene(text);
 }
 
 /**
@@ -83,7 +68,7 @@ export async function writeFileScene(
   data: FileSceneData,
 ): Promise<void> {
   const text = JSON.stringify(data, null, 2);
-  await writeTextFile(path, text);
+  await invoke("save_scene_file", { path, text });
 }
 
 /** Check whether a path exists (used to validate a previously-opened folder). */

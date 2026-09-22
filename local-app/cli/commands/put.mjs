@@ -1,3 +1,5 @@
+import { parseScene } from "../lib/scene.mjs";
+import { findScene } from "../lib/scene.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -20,8 +22,7 @@ JSON, then write it back with \`put\`. Preserves id / createdAt / starred /
 thumbnail (only elements/appState/files are replaced, plus optional rename).
 
 Arguments:
-  <id|name>     Scene id (exact) or name (exact, then substring; picks the
-                most recently updated match).
+  <id|name>     Scene id (exact) or name (exact, then substring; requires a unique match).
 
 Options:
   --file <path>   .excalidraw file whose content replaces the scene (required).
@@ -68,51 +69,14 @@ export async function runPut(argv) {
   }
 
   // Parse & validate the .excalidraw file (accept envelope or bare elements).
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(filePath, "utf8"));
-  } catch (e) {
-    fail(`invalid JSON in ${filePath}: ${e.message}`);
-  }
-  const elements = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed.elements)
-      ? parsed.elements
-      : null;
-  if (!elements) {
-    fail(
-      `not a valid .excalidraw file (no elements array): ${filePath}`,
-      errorEnvelope({
-        command: "put",
-        message: "invalid excalidraw format",
-        code: "EFORMAT",
-      }),
-    );
-  }
-  const appState = (parsed && parsed.appState) || {};
-  const files = (parsed && parsed.files) || {};
-
+  const { elements, appState, files } = parseScene(
+    readFileSync(filePath, "utf8"),
+  );
   const db = openDb();
   try {
     // Locate the target scene: exact id -> exact name -> name substring.
     const query = positional[0];
-    let row = db
-      .prepare("SELECT * FROM scenes WHERE id = ? AND is_deleted = 0")
-      .get(query);
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name = ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(query);
-    }
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name LIKE ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(`%${query}%`);
-    }
+    const row = findScene(db, query);
     if (!row) {
       fail(
         `no scene matches "${query}"`,
@@ -129,6 +93,7 @@ export async function runPut(argv) {
     // are preserved (thumbnail is regenerated next time the tab opens).
     db.prepare(
       `UPDATE scenes SET
+         thumbnail = NULL,
          elements_json = ?,
          app_state_json = ?,
          files_json = ?,
@@ -147,7 +112,9 @@ export async function runPut(argv) {
     emit(
       successEnvelope({
         command: "put",
-        message: `updated "${row.name}"${newName ? ` -> "${newName}"` : ""} (${elements.length} elements)`,
+        message: `updated "${row.name}"${newName ? ` -> "${newName}"` : ""} (${
+          elements.length
+        } elements)`,
         data: {
           sceneId: row.id,
           name: newName ?? row.name,

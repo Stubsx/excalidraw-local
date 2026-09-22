@@ -3,6 +3,23 @@ import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  plugins: [
+    {
+      name: "workspace-source-entry",
+      enforce: "pre",
+      resolveId(source, importer) {
+        // Directory imports must exercise source, not the package's published dist entry.
+        if (
+          importer &&
+          source.startsWith(".") &&
+          path.resolve(path.dirname(importer.split("?")[0]), source) ===
+            path.resolve(__dirname, "packages/excalidraw")
+        ) {
+          return path.resolve(__dirname, "packages/excalidraw/index.tsx");
+        }
+      },
+    },
+  ],
   resolve: {
     alias: [
       {

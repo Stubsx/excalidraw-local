@@ -1,5 +1,6 @@
 import { tabBarStyle } from "../styles";
 import { PlusIcon, CloseIcon } from "../icons";
+
 import type { Tab } from "../tabs";
 
 interface TabBarProps {
@@ -15,7 +16,13 @@ interface TabBarProps {
  * brand primary surface (mirrors sidebar-tab-trigger[data-state=active]);
  * dirty tabs show a dot. A + button creates a new tab.
  */
-export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps) {
+export function TabBar({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  onNew,
+}: TabBarProps) {
   return (
     <div className="excal-tabbar" style={tabBarStyle.container}>
       {tabs.map((tab) => {

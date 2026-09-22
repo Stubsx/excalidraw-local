@@ -1,5 +1,11 @@
+import { findScene } from "../lib/scene.mjs";
 import { openDb, dbExists } from "../lib/db.mjs";
-import { successEnvelope, errorEnvelope, emit, fail } from "../lib/envelope.mjs";
+import {
+  successEnvelope,
+  errorEnvelope,
+  emit,
+  fail,
+} from "../lib/envelope.mjs";
 import { notifyLibraryChanged } from "../lib/ipc.mjs";
 
 const USAGE = `\
@@ -53,36 +59,26 @@ export async function runMv(argv) {
   const db = openDb();
   try {
     const query = positional[0];
-    let row = db
-      .prepare("SELECT * FROM scenes WHERE id = ? AND is_deleted = 0")
-      .get(query);
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name = ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(query);
-    }
-    if (!row) {
-      row = db
-        .prepare(
-          "SELECT * FROM scenes WHERE name LIKE ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1",
-        )
-        .get(`%${query}%`);
-    }
+    const row = findScene(db, query);
     if (!row) {
       fail(
         `no scene matches "${query}"`,
-        errorEnvelope({ command: "mv", message: `not found: ${query}`, code: "ENOTFOUND" }),
+        errorEnvelope({
+          command: "mv",
+          message: `not found: ${query}`,
+          code: "ENOTFOUND",
+        }),
       );
     }
 
     const now = Date.now();
     let action;
     if (newName !== null) {
-      db.prepare(
-        "UPDATE scenes SET name = ?, updated_at = ? WHERE id = ?",
-      ).run(newName, now, row.id);
+      db.prepare("UPDATE scenes SET name = ?, updated_at = ? WHERE id = ?").run(
+        newName,
+        now,
+        row.id,
+      );
       action = `renamed "${row.name}" -> "${newName}"`;
     } else {
       const val = star ? 1 : 0;
@@ -96,7 +92,11 @@ export async function runMv(argv) {
       successEnvelope({
         command: "mv",
         message: action,
-        data: { sceneId: row.id, name: newName ?? row.name, starred: star ?? row.starred === 1 },
+        data: {
+          sceneId: row.id,
+          name: newName ?? row.name,
+          starred: star ?? row.starred === 1,
+        },
       }),
     );
   } finally {

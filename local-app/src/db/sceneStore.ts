@@ -23,7 +23,10 @@ function db(): Promise<Database> {
   if (!dbPromise) {
     // "sqlite:library.db" resolves under the app's AppConfig dir; the matching
     // Rust migration created the tables already.
-    dbPromise = Database.load("sqlite:library.db");
+    dbPromise = Database.load("sqlite:library.db").catch((error) => {
+      dbPromise = null;
+      throw error;
+    });
   }
   return dbPromise;
 }
@@ -93,16 +96,14 @@ export async function setActiveSceneId(id: string): Promise<void> {
 export async function getScene(id: string): Promise<SavedScene | null> {
   const conn = await db();
   const rows = await conn.select<SceneRow[]>(
-    `SELECT * FROM scenes WHERE id = $1`,
+    `SELECT * FROM scenes WHERE id = $1 AND is_deleted = 0`,
     [id],
   );
   return rows.length > 0 ? rowToScene(rows[0]) : null;
 }
 
 /** Insert or update a scene row (upsert by id). */
-export async function upsertScene(
-  scene: SavedScene,
-): Promise<void> {
+export async function upsertScene(scene: SavedScene): Promise<void> {
   const conn = await db();
   await conn.execute(
     `INSERT INTO scenes
@@ -135,8 +136,8 @@ export async function upsertScene(
  *
  * If a non-deleted scene with the same name exists, reuse its id and preserve
  * createdAt / starred, overwriting elements/appState/files/thumbnail and
- * bumping updatedAt. Otherwise insert a fresh row. This is how `excal render`
- * auto-saves into the library without creating duplicates on repeated renders
+ * bumping updatedAt. Otherwise insert a fresh row. This is how `excal render --save`
+ * saves into the library without creating duplicates on repeated renders
  * of the same file.
  *
  * Returns the scene id that was written.
@@ -155,10 +156,13 @@ export async function saveSceneByName(
 
   // Look for an existing live row with the same name.
   const rows = await conn.select<{ id: string }[]>(
-    `SELECT id FROM scenes WHERE name = $1 AND is_deleted = 0 LIMIT 1`,
+    `SELECT id FROM scenes WHERE name = $1 AND is_deleted = 0 LIMIT 2`,
     [name],
   );
 
+  if (rows.length > 1) {
+    throw new Error("存在多张同名图，请用场景 ID 更新。");
+  }
   if (rows.length > 0) {
     // Reuse: keep id/created_at/starred, overwrite content + thumbnail.
     const id = rows[0].id;
@@ -217,22 +221,28 @@ export async function saveEditorState(
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
   files: BinaryFiles,
-  name?: string,
+  expected?: Pick<SavedScene, "elements" | "appState" | "files">,
 ): Promise<void> {
-  const now = Date.now();
-  const existing = await getScene(id);
-  await upsertScene({
-    id,
-    // Preserve the existing name unless the caller explicitly passes one.
-    name: name ?? existing?.name ?? "未命名",
-    elements,
-    appState,
-    files,
-    thumbnail: existing?.thumbnail,
-    starred: existing?.starred ?? false,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  });
+  const conn = await db();
+  const result = await conn.execute(
+    `UPDATE scenes SET elements_json = $1, app_state_json = $2, files_json = $3, updated_at = $4
+     WHERE id = $5 AND is_deleted = 0 AND ($6 IS NULL OR (json(elements_json) = json($6) AND json(app_state_json) = json($7) AND json(files_json) = json($8)))`,
+    [
+      JSON.stringify(elements),
+      JSON.stringify(appState),
+      JSON.stringify(files),
+      Date.now(),
+      id,
+      expected ? JSON.stringify(expected.elements) : null,
+      expected ? JSON.stringify(expected.appState) : null,
+      expected ? JSON.stringify(expected.files) : null,
+    ],
+  );
+  if (!result.rowsAffected) {
+    throw new Error(
+      "原图已被删除或由其他程序修改，请先导出当前画布备份，再重新打开。",
+    );
+  }
 }
 
 /** Lightweight list row (no element JSON — for sidebar listing). */
@@ -256,7 +266,9 @@ export async function queryScenes(filter?: {
   const conn = await db();
   const where = ["is_deleted = 0"];
   const params: (string | number)[] = [];
-  if (filter?.starredOnly) where.push("starred = 1");
+  if (filter?.starredOnly) {
+    where.push("starred = 1");
+  }
   if (filter?.search) {
     where.push("(name LIKE ? OR elements_json LIKE ?)");
     const like = `%${filter.search}%`;
@@ -289,7 +301,10 @@ export async function queryScenes(filter?: {
 }
 
 /** Persist a thumbnail (dataURL) for a scene. */
-export async function setThumbnail(id: string, thumbnail: string): Promise<void> {
+export async function setThumbnail(
+  id: string,
+  thumbnail: string,
+): Promise<void> {
   const conn = await db();
   await conn.execute("UPDATE scenes SET thumbnail = $1 WHERE id = $2", [
     thumbnail,
@@ -318,10 +333,9 @@ export async function deleteScene(id: string): Promise<void> {
 /** Toggle starred. */
 export async function toggleStarred(id: string): Promise<void> {
   const conn = await db();
-  await conn.execute(
-    "UPDATE scenes SET starred = 1 - starred WHERE id = $1",
-    [id],
-  );
+  await conn.execute("UPDATE scenes SET starred = 1 - starred WHERE id = $1", [
+    id,
+  ]);
 }
 
 // --- Session persistence (which tabs are open) -----------------------------
@@ -338,16 +352,31 @@ export async function getOpenTabs(): Promise<{
     `SELECT value FROM app_state WHERE key = $1`,
     [SESSION_KEY],
   );
-  if (rows.length === 0) return { ids: [], activeId: null };
+  if (rows.length === 0) {
+    return { ids: [], activeId: null };
+  }
   try {
-    return JSON.parse(rows[0].value);
+    const value = JSON.parse(rows[0].value);
+    return {
+      ids: Array.isArray(value?.ids)
+        ? [
+            ...new Set<string>(
+              value.ids.filter((id: unknown) => typeof id === "string"),
+            ),
+          ]
+        : [],
+      activeId: typeof value?.activeId === "string" ? value.activeId : null,
+    };
   } catch {
     return { ids: [], activeId: null };
   }
 }
 
 /** Persist the open-tab list + active tab for next launch. */
-export async function setOpenTabs(ids: string[], activeId: string | null): Promise<void> {
+export async function setOpenTabs(
+  ids: string[],
+  activeId: string | null,
+): Promise<void> {
   const conn = await db();
   await conn.execute(
     `INSERT INTO app_state (key, value) VALUES ($1, $2)
@@ -369,7 +398,9 @@ export async function getFolderHistory(): Promise<FolderHistoryEntry[]> {
     `SELECT value FROM app_state WHERE key = $1`,
     [FOLDER_HISTORY_KEY],
   );
-  if (rows.length === 0) return [];
+  if (rows.length === 0) {
+    return [];
+  }
   try {
     const parsed = JSON.parse(rows[0].value) as FolderHistoryEntry[];
     // Defensive: tolerate slightly malformed entries.
@@ -394,7 +425,7 @@ export async function setFolderHistory(
     [
       FOLDER_HISTORY_KEY,
       JSON.stringify(
-        folders
+        [...folders]
           .sort((a, b) => b.lastOpened - a.lastOpened)
           .slice(0, FOLDER_HISTORY_MAX),
       ),

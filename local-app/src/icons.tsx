@@ -12,7 +12,6 @@
  * build them with the same `createIcon` + Tabler stroke style so they render
  * identically to the bundled ones.
  */
-import type { ReactElement } from "react";
 import {
   createIcon,
   PlusIcon as PlusIconEl,
@@ -24,6 +23,8 @@ import {
   LibraryIcon as LibraryIconEl,
   settingsIcon as settingsIconEl,
 } from "@excalidraw/excalidraw/components/icons";
+
+import type { ReactElement } from "react";
 
 /** Wrap a pre-rendered icon element as a component. */
 function asComponent(el: ReactElement) {

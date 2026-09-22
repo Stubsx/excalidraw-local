@@ -11,14 +11,17 @@ import {
   addFolderToHistory,
   removeFolderFromHistory,
 } from "../db/sceneStore";
-import { listExcalidrawFiles, pathExists, type FolderEntry } from "../folderStore";
-import type { FolderHistoryEntry } from "../db/types";
+import {
+  listExcalidrawFiles,
+  pathExists,
+  type FolderEntry,
+} from "../folderStore";
+
 import { sidebarStyle, COLORS } from "../styles";
 import {
   PlusIcon,
   ImageIcon,
   TrashIcon,
-  searchIcon,
   file as FileIcon,
   LibraryIcon,
   FolderIcon,
@@ -29,6 +32,8 @@ import {
   PencilIcon,
 } from "../icons";
 
+import type { FolderHistoryEntry } from "../db/types";
+
 type View = "library" | "folder";
 
 interface SidebarProps {
@@ -37,14 +42,16 @@ interface SidebarProps {
   onNew: () => void;
   /** Open the settings panel (CLI install etc.). */
   onOpenSettings: () => void;
-  /** Currently-open tab ids (kind:ref encoded) to highlight open tabs. */
-  openTabIds: Set<string>;
+  /** Only the current tab (kind:ref encoded) is highlighted. */
+  activeTabId: string | null;
   refreshKey: number;
   /**
    * Called after a library scene is renamed in the sidebar, so open tabs can
    * sync their title. Receives (sceneId, newName).
    */
   onSceneRenamed: (sceneId: string, newName: string) => void;
+  beforeMutation: () => Promise<void>;
+  onSceneDeleted: (sceneId: string) => void;
 }
 
 /**
@@ -60,9 +67,11 @@ export function Sidebar({
   onOpenFile,
   onNew,
   onOpenSettings,
-  openTabIds,
+  activeTabId,
   refreshKey,
   onSceneRenamed,
+  beforeMutation,
+  onSceneDeleted,
 }: SidebarProps) {
   const [view, setView] = useState<View>("library");
   const [items, setItems] = useState<SceneListItem[]>([]);
@@ -78,27 +87,53 @@ export function Sidebar({
   // last-used folder, preselect it (but don't force-switch to folder view —
   // the user may prefer the library as the landing view).
   useEffect(() => {
-    getFolderHistory().then((history) => {
-      setFolders(history);
-      if (history.length > 0 && !activeFolderPath) {
-        setActiveFolderPath(history[0].path);
-      }
-    });
+    let disposed = false;
+    getFolderHistory()
+      .then((history) => {
+        if (disposed) {
+          return;
+        }
+        setFolders(history);
+        if (history.length > 0 && !activeFolderPath) {
+          setActiveFolderPath(history[0].path);
+        }
+      })
+      .catch((e) => {
+        if (!disposed) {
+          setError(String(e));
+        }
+      });
+    return () => {
+      disposed = true;
+    };
     // run once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const libraryLoad = useRef(0);
+  const folderLoad = useRef(0);
   const reloadLibrary = useCallback(async () => {
+    const request = ++libraryLoad.current;
     const rows = await queryScenes({
       search: search.trim() || undefined,
       starredOnly,
     });
-    setItems(rows);
+    if (request === libraryLoad.current) {
+      setItems(rows);
+    }
   }, [search, starredOnly]);
 
   const reloadFolder = useCallback(async () => {
-    if (!activeFolderPath) return;
-    if (!(await pathExists(activeFolderPath))) {
+    const request = ++folderLoad.current;
+    if (!activeFolderPath) {
+      setFolderEntries([]);
+      return;
+    }
+    const folderExists = await pathExists(activeFolderPath);
+    if (request !== folderLoad.current) {
+      return;
+    }
+    if (!folderExists) {
       setError("文件夹不存在（可能已被移动或删除）");
       setFolderEntries([]);
       return;
@@ -110,12 +145,17 @@ export function Sidebar({
           e.name.toLowerCase().includes(search.trim().toLowerCase()),
         )
       : entries;
-    setFolderEntries(filtered);
+    if (request === folderLoad.current) {
+      setFolderEntries(filtered);
+    }
   }, [activeFolderPath, search]);
 
   useEffect(() => {
-    if (view === "library") reloadLibrary();
-    else reloadFolder();
+    if (view === "library") {
+      void reloadLibrary().catch((e) => setError(String(e)));
+    } else {
+      void reloadFolder().catch((e) => setError(String(e)));
+    }
   }, [view, reloadLibrary, reloadFolder, refreshKey]);
 
   const pickFolder = useCallback(async () => {
@@ -134,27 +174,32 @@ export function Sidebar({
     }
   }, [activeFolderPath]);
 
-  const switchFolder = useCallback((path: string) => {
-    setActiveFolderPath(path);
-    setView("folder");
-    // bump lastOpened for the chosen folder + reorder.
-    const entry = folders.find((f) => f.path === path);
-    if (entry) {
-      const now = Date.now();
-      const reordered = [
-        { ...entry, lastOpened: now },
-        ...folders.filter((f) => f.path !== path),
-      ];
-      setFolders(reordered);
-      addFolderToHistory(path, entry.name);
-    }
-  }, [folders]);
+  const switchFolder = useCallback(
+    (path: string) => {
+      setActiveFolderPath(path);
+      setView("folder");
+      // bump lastOpened for the chosen folder + reorder.
+      const entry = folders.find((f) => f.path === path);
+      if (entry) {
+        const now = Date.now();
+        const reordered = [
+          { ...entry, lastOpened: now },
+          ...folders.filter((f) => f.path !== path),
+        ];
+        setFolders(reordered);
+        void addFolderToHistory(path, entry.name).catch((e) =>
+          setError(String(e)),
+        );
+      }
+    },
+    [folders],
+  );
 
   const removeFolder = useCallback(async (path: string) => {
     const updated = await removeFolderFromHistory(path);
     setFolders(updated);
     setActiveFolderPath((cur) =>
-      cur === path ? (updated[0]?.path ?? null) : cur,
+      cur === path ? updated[0]?.path ?? null : cur,
     );
   }, []);
 
@@ -163,7 +208,9 @@ export function Sidebar({
       {/* View switcher — segmented control, mirrors sidebar-tab-trigger */}
       <div style={sidebarStyle.viewSwitch}>
         <button
-          className={`excal-btn${view === "library" ? " excal-btn--active" : ""}`}
+          className={`excal-btn${
+            view === "library" ? " excal-btn--active" : ""
+          }`}
           onClick={() => setView("library")}
           style={{ flex: 1, gap: "0.3rem" }}
         >
@@ -171,7 +218,9 @@ export function Sidebar({
           资料库
         </button>
         <button
-          className={`excal-btn${view === "folder" ? " excal-btn--active" : ""}`}
+          className={`excal-btn${
+            view === "folder" ? " excal-btn--active" : ""
+          }`}
           onClick={() => setView("folder")}
           style={{ flex: 1, gap: "0.3rem" }}
         >
@@ -214,7 +263,9 @@ export function Sidebar({
             <button
               className="excal-btn"
               style={{ gap: "0.3rem" }}
-              onClick={pickFolder}
+              onClick={() => {
+                void pickFolder().catch((e) => setError(String(e)));
+              }}
             >
               <FolderIcon />
               打开文件夹
@@ -266,7 +317,11 @@ export function Sidebar({
         )}
         {view === "folder" && folderEntries.length === 0 && (
           <Empty
-            text={activeFolderPath ? "该文件夹没有 .excalidraw 文件" : "点上方按钮打开文件夹"}
+            text={
+              activeFolderPath
+                ? "该文件夹没有 .excalidraw 文件"
+                : "点上方按钮打开文件夹"
+            }
           />
         )}
 
@@ -276,11 +331,14 @@ export function Sidebar({
             return (
               <LibraryItem
                 key={item.id}
-                active={openTabIds.has(tabId)}
+                active={activeTabId === tabId}
                 item={item}
                 onClick={() => onOpenScene(item.id)}
                 onRenamed={reloadLibrary}
                 onSceneRenamed={onSceneRenamed}
+                beforeMutation={beforeMutation}
+                onSceneDeleted={onSceneDeleted}
+                onError={(e) => setError(String(e))}
               />
             );
           })}
@@ -291,7 +349,7 @@ export function Sidebar({
             return (
               <Item
                 key={entry.path}
-                active={openTabIds.has(tabId)}
+                active={activeTabId === tabId}
                 onClick={() => onOpenFile(entry.path, entry.name)}
                 thumb={null}
                 name={entry.name}
@@ -347,11 +405,21 @@ function Item({
         {thumb ? (
           <img src={thumb} style={sidebarStyle.thumbImg} alt="" />
         ) : thumb === null ? (
-          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+          <span
+            style={{
+              ...sidebarStyle.thumbPlaceholder,
+              color: COLORS.textMuted,
+            }}
+          >
             <FileIcon />
           </span>
         ) : (
-          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+          <span
+            style={{
+              ...sidebarStyle.thumbPlaceholder,
+              color: COLORS.textMuted,
+            }}
+          >
             <ImageIcon />
           </span>
         )}
@@ -368,12 +436,20 @@ function Item({
 function relTime(ts: number): string {
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return "刚刚";
-  if (m < 60) return `${m}分钟前`;
+  if (m < 1) {
+    return "刚刚";
+  }
+  if (m < 60) {
+    return `${m}分钟前`;
+  }
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}小时前`;
+  if (h < 24) {
+    return `${h}小时前`;
+  }
   const d = Math.floor(h / 24);
-  if (d < 30) return `${d}天前`;
+  if (d < 30) {
+    return `${d}天前`;
+  }
   return new Date(ts).toLocaleDateString();
 }
 
@@ -390,6 +466,9 @@ function LibraryItem({
   onClick,
   onRenamed,
   onSceneRenamed,
+  beforeMutation,
+  onSceneDeleted,
+  onError,
 }: {
   item: SceneListItem;
   active: boolean;
@@ -397,10 +476,14 @@ function LibraryItem({
   onRenamed: () => void;
   /** Propagate the rename to open tabs (syncs tab titles). */
   onSceneRenamed: (sceneId: string, newName: string) => void;
+  beforeMutation: () => Promise<void>;
+  onSceneDeleted: (sceneId: string) => void;
+  onError: (error: unknown) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.name || "未命名");
   const inputRef = useRef<HTMLInputElement>(null);
+  const cancelling = useRef(false);
 
   // Focus + select when entering edit mode.
   useEffect(() => {
@@ -411,22 +494,39 @@ function LibraryItem({
   }, [editing]);
 
   const commit = useCallback(async () => {
+    if (cancelling.current) {
+      cancelling.current = false;
+      return;
+    }
     const trimmed = draft.trim();
     setEditing(false);
     // No-op if unchanged or empty.
-    if (!trimmed || trimmed === item.name) return;
+    if (!trimmed || trimmed === item.name) {
+      return;
+    }
     try {
+      await beforeMutation();
       await renameScene(item.id, trimmed);
       onRenamed();
       // Sync any open tab's title (the tab holds its own copy of the name).
       onSceneRenamed(item.id, trimmed);
-    } catch {
-      // best-effort; keep the old name on failure
+    } catch (e) {
+      onError(e);
+      // Keep the old name on failure
       setDraft(item.name || "未命名");
     }
-  }, [draft, item.id, item.name, onRenamed, onSceneRenamed]);
+  }, [
+    draft,
+    item.id,
+    item.name,
+    onRenamed,
+    onSceneRenamed,
+    beforeMutation,
+    onError,
+  ]);
 
   const cancel = useCallback(() => {
+    cancelling.current = true;
     setDraft(item.name || "未命名");
     setEditing(false);
   }, [item.name]);
@@ -441,7 +541,12 @@ function LibraryItem({
         {item.thumbnail ? (
           <img src={item.thumbnail} style={sidebarStyle.thumbImg} alt="" />
         ) : (
-          <span style={{ ...sidebarStyle.thumbPlaceholder, color: COLORS.textMuted }}>
+          <span
+            style={{
+              ...sidebarStyle.thumbPlaceholder,
+              color: COLORS.textMuted,
+            }}
+          >
             <ImageIcon />
           </span>
         )}
@@ -480,6 +585,7 @@ function LibraryItem({
           onClick={(e) => {
             e.stopPropagation();
             setDraft(item.name || "未命名");
+            cancelling.current = false;
             setEditing(true);
           }}
         >
@@ -490,7 +596,7 @@ function LibraryItem({
           title={item.starred ? "取消收藏" : "收藏"}
           onClick={(e) => {
             e.stopPropagation();
-            toggleStarred(item.id).then(onRenamed);
+            void toggleStarred(item.id).then(onRenamed).catch(onError);
           }}
           style={{ color: item.starred ? COLORS.star : undefined }}
         >
@@ -502,7 +608,13 @@ function LibraryItem({
           onClick={(e) => {
             e.stopPropagation();
             if (confirm(`删除"${item.name}"?`)) {
-              deleteScene(item.id).then(onRenamed);
+              void beforeMutation()
+                .then(() => deleteScene(item.id))
+                .then(() => {
+                  onSceneDeleted(item.id);
+                  onRenamed();
+                })
+                .catch(onError);
             }
           }}
           style={{ color: COLORS.danger }}

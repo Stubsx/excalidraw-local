@@ -3,92 +3,194 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getOpenTabs,
   getScene,
-  setOpenTabs as persistOpenTabs,
+  setOpenTabs,
   uuid,
   upsertScene,
 } from "./db/sceneStore";
 import { readFileScene } from "./folderStore";
+
 import type { SavedScene } from "./db/types";
 
-/**
- * Where a tab's content lives.
- * - "library": a scene in the SQLite library (id-keyed).
- * - "file": a `.excalidraw` file on disk (path-keyed, edited in place).
- */
 export type TabKind = "library" | "file";
-
-/**
- * A single open tab. `scene` holds the loaded data (null while loading).
- */
 export interface Tab {
-  /** Stable unique id for React keys (NOT the scene id — see kind-specific id). */
   id: string;
   kind: TabKind;
-  /** For kind="library": the scene id. For kind="file": the absolute path. */
   refId: string;
   name: string;
-  scene: SavedScene | null; // normalized view of the loaded data
-  dirty: boolean; // unsaved changes
+  scene: SavedScene;
+  dirty: boolean;
+  revision: number;
+}
+interface Session {
+  tabs: Tab[];
+  activeId: string | null;
 }
 
-/**
- * Build a tab id that encodes kind+ref so the same scene/file isn't opened
- * twice.
- */
-function tabIdFor(kind: TabKind, refId: string): string {
-  return `${kind}:${refId}`;
-}
-
-/**
- * Multi-tab state manager.
- *
- * Two kinds of tabs coexist:
- *   - "library" tabs: bound to SQLite scenes (autosaved to the db).
- *   - "file" tabs: bound to `.excalidraw` files on disk (saved in place).
- *
- * Only library tabs are persisted across sessions (file tabs require the
- * folder to still exist + aren't worth re-opening blindly).
- */
-export function useTabs() {
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+/** Navigation is serialized: flush the editor, then load fresh persisted data. */
+export function useTabs(beforeLeave: () => Promise<void>) {
+  const [session, setSession] = useState<Session>({ tabs: [], activeId: null });
+  const current = useRef(session);
+  const queue = useRef(Promise.resolve());
   const [bootstrapped, setBootstrapped] = useState(false);
-
-  const initGuard = useRef(false);
-
-  useEffect(() => {
-    if (!bootstrapped) return;
-    // Only persist library tab ids (file tabs are re-opened via the folder view).
-    const libIds = tabs.filter((t) => t.kind === "library").map((t) => t.refId);
-    const activeLib = tabs.find((t) => t.id === activeId && t.kind === "library");
-    persistOpenTabs(libIds, activeLib ? activeLib.refId : null).catch(() => {});
-  }, [tabs, activeId, bootstrapped]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const commit = useCallback((next: Session) => {
+    current.current = next;
+    setSession(next);
+  }, []);
 
   useEffect(() => {
-    if (initGuard.current) return;
-    initGuard.current = true;
     let cancelled = false;
     (async () => {
-      let { ids, activeId: savedActive } = await getOpenTabs();
-      const existing: Tab[] = [];
-      for (const id of ids) {
-        const sc = await getScene(id);
-        if (sc) {
-          existing.push({
-            id: tabIdFor("library", id),
-            kind: "library",
-            refId: id,
-            name: sc.name,
-            scene: sc,
-            dirty: false,
-          });
+      try {
+        const saved = await getOpenTabs();
+        const tabs: Tab[] = [];
+        for (const id of saved.ids) {
+          const scene = await getScene(id);
+          if (scene) {
+            tabs.push({
+              id: `library:${id}`,
+              kind: "library",
+              refId: id,
+              name: scene.name,
+              scene,
+              dirty: false,
+              revision: 0,
+            });
+          }
+        }
+        if (cancelled) {
+          return;
+        }
+        const activeId = `library:${saved.activeId}`;
+        commit({
+          tabs,
+          activeId: tabs.some((t) => t.id === activeId)
+            ? activeId
+            : tabs[0]?.id ?? null,
+        });
+      } catch (e) {
+        if (!cancelled) {
+          setError(`恢复会话失败：${e}`);
+        }
+      } finally {
+        if (!cancelled) {
+          setBootstrapped(true);
         }
       }
-      if (existing.length === 0) {
-        const newId = uuid();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [commit]);
+
+  const persist = useCallback(async () => {
+    const { tabs, activeId } = current.current;
+    const active = tabs.find((t) => t.id === activeId && t.kind === "library");
+    await setOpenTabs(
+      tabs.filter((t) => t.kind === "library").map((t) => t.refId),
+      active?.refId ?? null,
+    );
+  }, []);
+  const run = useCallback(
+    (operation: () => Promise<void>) => {
+      setBusy(true);
+      const task = queue.current
+        .then(async () => {
+          setError(null);
+          await beforeLeave();
+          await operation();
+          await persist();
+        })
+        .catch((e) => {
+          setError(String(e));
+        });
+      queue.current = task;
+      void task.finally(() => {
+        if (queue.current === task) {
+          setBusy(false);
+        }
+      });
+      return task;
+    },
+    [beforeLeave, persist],
+  );
+
+  const load = useCallback(
+    async (kind: TabKind, refId: string, name: string): Promise<SavedScene> => {
+      if (kind === "library") {
+        const scene = await getScene(refId);
+        if (!scene) {
+          throw new Error("这张图已删除或不存在。");
+        }
+        return scene;
+      }
+      const data = await readFileScene(refId);
+      return {
+        id: refId,
+        name,
+        elements: data.elements as SavedScene["elements"],
+        appState: data.appState,
+        files: data.files as SavedScene["files"],
+        starred: false,
+        createdAt: 0,
+        updatedAt: 0,
+      };
+    },
+    [],
+  );
+
+  const open = useCallback(
+    (kind: TabKind, refId: string, name: string) =>
+      run(async () => {
+        const id = `${kind}:${refId}`;
+        if (current.current.activeId === id) {
+          return;
+        }
+        const scene = await load(kind, refId, name);
+        const old = current.current.tabs.find((t) => t.id === id);
+        const tab: Tab = {
+          id,
+          kind,
+          refId,
+          name: scene.name,
+          scene,
+          dirty: false,
+          revision: (old?.revision ?? -1) + 1,
+        };
+        commit({
+          tabs: old
+            ? current.current.tabs.map((t) => (t.id === id ? tab : t))
+            : [...current.current.tabs, tab],
+          activeId: id,
+        });
+      }),
+    [run, load, commit],
+  );
+  const openScene = useCallback(
+    (id: string) => open("library", id, ""),
+    [open],
+  );
+  const openFile = useCallback(
+    (path: string, name: string) => open("file", path, name),
+    [open],
+  );
+  const setActiveId = useCallback(
+    (id: string) => {
+      const tab = current.current.tabs.find((t) => t.id === id);
+      if (tab) {
+        return open(tab.kind, tab.refId, tab.name);
+      }
+    },
+    [open],
+  );
+  const newTab = useCallback(
+    () =>
+      run(async () => {
+        const id = uuid();
         const now = Date.now();
-        await upsertScene({
-          id: newId,
+        const scene: SavedScene = {
+          id,
           name: "未命名",
           elements: [],
           appState: {},
@@ -96,205 +198,141 @@ export function useTabs() {
           starred: false,
           createdAt: now,
           updatedAt: now,
-        });
-        const sc = await getScene(newId);
-        existing.push({
-          id: tabIdFor("library", newId),
+        };
+        await upsertScene(scene);
+        const tab: Tab = {
+          id: `library:${id}`,
           kind: "library",
-          refId: newId,
-          name: "未命名",
-          scene: sc,
+          refId: id,
+          name: scene.name,
+          scene,
           dirty: false,
-        });
-        savedActive = tabIdFor("library", newId);
-      } else {
-        savedActive = savedActive ? tabIdFor("library", savedActive) : null;
-      }
-      if (cancelled) return;
-      setTabs(existing);
-      setActiveId(
-        savedActive && existing.some((t) => t.id === savedActive)
-          ? savedActive
-          : existing[0].id,
-      );
-      setBootstrapped(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /** Open a library scene in a new tab (or focus it if already open). */
-  const openScene = useCallback(async (sceneId: string) => {
-    const tabId = tabIdFor("library", sceneId);
-    setTabs((prev) => {
-      if (prev.some((t) => t.id === tabId)) {
-        setActiveId(tabId);
-        return prev;
-      }
-      const placeholder: Tab = {
-        id: tabId,
-        kind: "library",
-        refId: sceneId,
-        name: "…",
-        scene: null,
-        dirty: false,
-      };
-      getScene(sceneId).then((sc) => {
-        if (sc) {
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.id === tabId ? { ...t, name: sc.name, scene: sc } : t,
-            ),
-          );
-        }
-      });
-      setActiveId(tabId);
-      return [...prev, placeholder];
-    });
-  }, []);
-
-  /** Open a `.excalidraw` file from disk in a new tab (edited in place). */
-  const openFile = useCallback(async (path: string, name: string) => {
-    const tabId = tabIdFor("file", path);
-    setTabs((prev) => {
-      if (prev.some((t) => t.id === tabId)) {
-        setActiveId(tabId);
-        return prev;
-      }
-      const placeholder: Tab = {
-        id: tabId,
-        kind: "file",
-        refId: path,
-        name,
-        scene: null,
-        dirty: false,
-      };
-      readFileScene(path)
-        .then((data) => {
-          const normalized: SavedScene = {
-            id: path,
-            name,
-            elements: data.elements as SavedScene["elements"],
-            appState: data.appState as SavedScene["appState"],
-            files: data.files as SavedScene["files"],
-            starred: false,
-            createdAt: 0,
-            updatedAt: 0,
-          };
-          setTabs((prev) =>
-            prev.map((t) => (t.id === tabId ? { ...t, scene: normalized } : t)),
-          );
-        })
-        .catch((e) => console.error("[tabs] failed to read file", path, e));
-      setActiveId(tabId);
-      return [...prev, placeholder];
-    });
-  }, []);
-
-  /** Create a new blank library scene + tab. */
-  const newTab = useCallback(async () => {
-    const id = uuid();
-    const now = Date.now();
-    await upsertScene({
-      id,
-      name: "未命名",
-      elements: [],
-      appState: {},
-      files: {},
-      starred: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const sc = await getScene(id);
-    const tabId = tabIdFor("library", id);
-    setTabs((prev) => [
-      ...prev,
-      { id: tabId, kind: "library", refId: id, name: "未命名", scene: sc, dirty: false },
-    ]);
-    setActiveId(tabId);
-  }, []);
-
+          revision: 0,
+        };
+        commit({ tabs: [...current.current.tabs, tab], activeId: tab.id });
+      }),
+    [run, commit],
+  );
   const closeTab = useCallback(
-    (id: string) => {
-      setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.id === id);
-        const next = prev.filter((t) => t.id !== id);
-        if (next.length === 0) {
-          const newId = uuid();
-          const now = Date.now();
-          upsertScene({
-            id: newId,
-            name: "未命名",
-            elements: [],
-            appState: {},
-            files: {},
-            starred: false,
-            createdAt: now,
-            updatedAt: now,
-          }).then(() =>
-            getScene(newId).then((sc) => {
-              const tid = tabIdFor("library", newId);
-              setTabs([
-                { id: tid, kind: "library", refId: newId, name: "未命名", scene: sc, dirty: false },
-              ]);
-              setActiveId(tid);
-            }),
+    (id: string) =>
+      run(async () => {
+        const previous = current.current;
+        const index = previous.tabs.findIndex((t) => t.id === id);
+        if (index < 0) {
+          return;
+        }
+        let tabs = previous.tabs.filter((t) => t.id !== id);
+        const activeId =
+          previous.activeId === id
+            ? tabs[Math.max(0, index - 1)]?.id ?? null
+            : previous.activeId;
+        if (activeId && activeId !== previous.activeId) {
+          const next = tabs.find((t) => t.id === activeId)!;
+          const scene = await load(next.kind, next.refId, next.name);
+          tabs = tabs.map((t) =>
+            t.id === activeId
+              ? { ...t, scene, name: scene.name, revision: t.revision + 1 }
+              : t,
           );
-          return prev;
         }
-        if (activeId === id) {
-          setActiveId(next[Math.max(0, idx - 1)].id);
-        }
-        return next;
+        commit({ tabs, activeId });
+      }),
+    [run, load, commit],
+  );
+  const setDirty = useCallback(
+    (id: string, dirty: boolean) => {
+      if (!current.current.tabs.some((t) => t.id === id && t.dirty !== dirty)) {
+        return;
+      }
+      commit({
+        ...current.current,
+        tabs: current.current.tabs.map((t) =>
+          t.id === id ? { ...t, dirty } : t,
+        ),
       });
     },
-    [activeId],
+    [commit],
   );
-
-  const markDirty = useCallback((id: string) => {
-    setTabs((prev) => {
-      const tab = prev.find((t) => t.id === id);
-      // No-op when the tab is already dirty: returning the same array avoids
-      // a parent re-render on every Excalidraw onChange, which otherwise
-      // feeds back into the tunnel-rat stores and loops (React error #185).
-      if (!tab || tab.dirty) return prev;
-      return prev.map((t) => (t.id === id ? { ...t, dirty: true } : t));
-    });
-  }, []);
-
-  const markClean = useCallback((id: string) => {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, dirty: false } : t)),
-    );
-  }, []);
-
-  /**
-   * Sync a library tab's name after the scene is renamed (e.g. from the
-   * sidebar). No-op if the scene isn't open as a tab, or if it's a file tab.
-   * Also keeps `scene.name` in sync so a re-render uses the new name.
-   */
-  const renameTab = useCallback((sceneId: string, newName: string) => {
-    const tabId = tabIdFor("library", sceneId);
-    setTabs((prev) => {
-      const tab = prev.find((t) => t.id === tabId);
-      if (!tab || tab.name === newName) return prev;
-      return prev.map((t) =>
-        t.id === tabId
-          ? {
-              ...t,
-              name: newName,
-              scene: t.scene ? { ...t.scene, name: newName } : t.scene,
+  const markDirty = useCallback((id: string) => setDirty(id, true), [setDirty]);
+  const markClean = useCallback(
+    (id: string) => setDirty(id, false),
+    [setDirty],
+  );
+  const renameTab = useCallback(
+    (sceneId: string, name: string) => {
+      commit({
+        ...current.current,
+        tabs: current.current.tabs.map((t) =>
+          t.kind === "library" && t.refId === sceneId ? { ...t, name } : t,
+        ),
+      });
+    },
+    [commit],
+  );
+  const syncLibrary = useCallback(async () => {
+    const snapshot = current.current;
+    try {
+      const fresh = await Promise.all(
+        snapshot.tabs.map(async (tab) => {
+          if (tab.kind !== "library") {
+            return tab;
+          }
+          const scene = await getScene(tab.refId);
+          const changed =
+            !scene ||
+            JSON.stringify([scene.elements, scene.appState, scene.files]) !==
+              JSON.stringify([
+                tab.scene.elements,
+                tab.scene.appState,
+                tab.scene.files,
+              ]);
+          if (tab.dirty) {
+            if (changed) {
+              setError(
+                "图稿已由其他程序更新，当前修改仍在画布中。请先导出备份，再关闭并重新打开。",
+              );
             }
-          : t,
+            return tab;
+          }
+          if (!scene) {
+            return null;
+          }
+          return {
+            ...tab,
+            name: scene.name,
+            scene,
+            revision: changed ? tab.revision + 1 : tab.revision,
+          };
+        }),
       );
-    });
-  }, []);
-
+      if (current.current !== snapshot) {
+        return;
+      }
+      const tabs = fresh.filter((tab): tab is Tab => tab !== null);
+      commit({
+        tabs,
+        activeId: tabs.some((t) => t.id === snapshot.activeId)
+          ? snapshot.activeId
+          : tabs[0]?.id ?? null,
+      });
+      await persist();
+    } catch (e) {
+      setError(`同步资料库失败：${e}`);
+    }
+  }, [commit, persist]);
+  const prepareExit = useCallback(async () => {
+    await queue.current;
+    await beforeLeave();
+    await persist();
+  }, [beforeLeave, persist]);
   return {
-    tabs,
-    activeId,
+    ...session,
+    syncLibrary,
+    prepareExit,
     bootstrapped,
+    busy,
+    error,
+    setError,
     setActiveId,
     openScene,
     openFile,
@@ -303,6 +341,6 @@ export function useTabs() {
     markDirty,
     markClean,
     renameTab,
+    persist,
   };
 }
-
