@@ -225,7 +225,7 @@ export async function saveEditorState(
 ): Promise<void> {
   const conn = await db();
   const result = await conn.execute(
-    `UPDATE scenes SET elements_json = $1, app_state_json = $2, files_json = $3, updated_at = $4
+    `UPDATE scenes SET elements_json = $1, app_state_json = $2, files_json = $3, updated_at = $4, thumbnail = NULL
      WHERE id = $5 AND is_deleted = 0 AND ($6 IS NULL OR (json(elements_json) = json($6) AND json(app_state_json) = json($7) AND json(files_json) = json($8)))`,
     [
       JSON.stringify(elements),
@@ -255,6 +255,8 @@ export interface SceneListItem {
   updatedAt: number;
 }
 
+export type SceneSortOrder = "newest" | "oldest";
+
 /**
  * List scenes for the sidebar. Optionally filter by name substring and/or
  * starred-only. Returns light rows (no elements/files JSON) for speed.
@@ -262,6 +264,7 @@ export interface SceneListItem {
 export async function queryScenes(filter?: {
   search?: string;
   starredOnly?: boolean;
+  order?: SceneSortOrder;
 }): Promise<SceneListItem[]> {
   const conn = await db();
   const where = ["is_deleted = 0"];
@@ -287,7 +290,9 @@ export async function queryScenes(filter?: {
     `SELECT id, name, thumbnail, starred, created_at, updated_at
      FROM scenes
      WHERE ${where.join(" AND ")}
-     ORDER BY starred DESC, updated_at DESC`,
+     ORDER BY updated_at ${
+       filter?.order === "oldest" ? "ASC" : "DESC"
+     }, id ASC`,
     params,
   );
   return rows.map((r) => ({
@@ -300,16 +305,25 @@ export async function queryScenes(filter?: {
   }));
 }
 
-/** Persist a thumbnail (dataURL) for a scene. */
+/** Cache a preview only while its source content still matches. Never change edit time. */
 export async function setThumbnail(
   id: string,
   thumbnail: string,
-): Promise<void> {
+  expected: Pick<SavedScene, "elements" | "appState" | "files">,
+): Promise<boolean> {
   const conn = await db();
-  await conn.execute("UPDATE scenes SET thumbnail = $1 WHERE id = $2", [
-    thumbnail,
-    id,
-  ]);
+  const result = await conn.execute(
+    `UPDATE scenes SET thumbnail = $1 WHERE id = $2 AND is_deleted = 0
+     AND json(elements_json) = json($3) AND json(app_state_json) = json($4) AND json(files_json) = json($5)`,
+    [
+      thumbnail,
+      id,
+      JSON.stringify(expected.elements),
+      JSON.stringify(expected.appState),
+      JSON.stringify(expected.files),
+    ],
+  );
+  return result.rowsAffected > 0;
 }
 
 /** Rename a scene. */

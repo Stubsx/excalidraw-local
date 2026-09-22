@@ -18,8 +18,8 @@ Usage: excal local put <id|name> --file <scene.excalidraw> [--name <newname>]
 Overwrite an existing library scene's CONTENT with a .excalidraw file.
 
 Closes the get -> edit -> put loop: export a scene with \`get\`, modify the
-JSON, then write it back with \`put\`. Preserves id / createdAt / starred /
-thumbnail (only elements/appState/files are replaced, plus optional rename).
+JSON, then write it back with \`put\`. Preserves id / createdAt / starred.
+The library regenerates the thumbnail from the updated content.
 
 Arguments:
   <id|name>     Scene id (exact) or name (exact, then substring; requires a unique match).
@@ -89,8 +89,8 @@ export async function runPut(argv) {
     }
 
     const now = Date.now();
-    // Overwrite content + optional rename. id/created_at/starred/thumbnail
-    // are preserved (thumbnail is regenerated next time the tab opens).
+    // Preserve identity and favourites; invalidate the thumbnail so the library
+    // regenerates it even if the updated scene is never opened in the editor.
     db.prepare(
       `UPDATE scenes SET
          thumbnail = NULL,

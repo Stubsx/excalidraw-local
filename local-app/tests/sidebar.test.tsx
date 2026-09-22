@@ -20,6 +20,9 @@ const store = vi.hoisted(() => ({
   removeFolderFromHistory: vi.fn(),
 }));
 vi.mock("../src/db/sceneStore", () => store);
+vi.mock("../src/thumbnails", () => ({
+  ensureThumbnail: vi.fn().mockResolvedValue(""),
+}));
 vi.mock("../src/folderStore", () => ({
   listExcalidrawFiles: vi.fn(),
   pathExists: vi.fn(),
@@ -43,6 +46,7 @@ vi.mock("../src/icons", () =>
       "CloseIcon",
       "PencilIcon",
       "MoreIcon",
+      "TimeSortIcon",
       "WorkspaceIcon",
       "searchIcon",
     ].map((name) => [name, () => null]),
@@ -51,6 +55,7 @@ vi.mock("../src/icons", () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   store.queryScenes.mockResolvedValue([
     { id: "test", name: "原名称", starred: false, updatedAt: Date.now() },
   ]);
@@ -88,6 +93,43 @@ it("keeps the menu usable when WebKit reports a null related focus target", asyn
   fireEvent.blur(rename, { relatedTarget: null });
   fireEvent.click(rename);
   expect(screen.getByRole("textbox", { name: "图稿名称" })).toBeTruthy();
+});
+
+it("switches modification-time order, preserves filters, and remembers the choice", async () => {
+  setup();
+  await screen.findByRole("button", { name: "「原名称」的更多操作" });
+  fireEvent.click(screen.getByRole("button", { name: "收藏" }));
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "流程" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "按修改时间排序：最新优先" }),
+  );
+  await waitFor(() =>
+    expect(store.queryScenes).toHaveBeenLastCalledWith({
+      search: "流程",
+      starredOnly: true,
+      order: "oldest",
+    }),
+  );
+  expect(
+    screen.getByRole("button", { name: "按修改时间排序：最早优先" }),
+  ).toBeTruthy();
+  cleanup();
+  setup();
+  expect(
+    screen.getByRole("button", { name: "按修改时间排序：最早优先" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "按修改时间排序：最早优先" }),
+  );
+  await waitFor(() =>
+    expect(store.queryScenes).toHaveBeenLastCalledWith({
+      search: undefined,
+      starredOnly: false,
+      order: "newest",
+    }),
+  );
 });
 
 it("does not submit an IME confirmation as rename, then flushes before committing once", async () => {

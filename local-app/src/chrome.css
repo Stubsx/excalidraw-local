@@ -280,6 +280,16 @@
   font-size: 11px;
   color: var(--color-gray-60);
 }
+.excal-list-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.excal-time-sort {
+  width: 27px;
+  height: 27px;
+  color: var(--color-gray-60);
+}
 .excal-filter svg {
   width: 13px;
   height: 13px;
@@ -330,8 +340,8 @@
   border-radius: 7px;
 }
 .excal-thumb {
-  width: 42px;
-  height: 34px;
+  width: 52px;
+  height: 40px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -341,6 +351,19 @@
   border: 1px solid var(--sidebar-border-color);
   background: var(--island-bg-color);
   color: var(--color-gray-60);
+}
+.excal-thumb--blank {
+  background: #fff;
+}
+.excal-thumb--loading {
+  background: var(--color-surface-mid);
+}
+.excal-thumb--loading::after {
+  content: "";
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--sidebar-border-color);
 }
 .excal-thumb img {
   width: 100%;
@@ -470,14 +493,6 @@
 .excal-sidebar-footer {
   padding: 12px;
   border-top: 1px solid var(--sidebar-border-color);
-}
-.excal-storage-note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 8px 7px;
-  color: var(--color-gray-60);
-  font-size: 10px;
 }
 .excal-local-dot {
   display: inline-block;

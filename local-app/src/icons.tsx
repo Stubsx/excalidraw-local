@@ -46,6 +46,23 @@ export const SettingsIcon = asComponent(settingsIconEl);
 export const CopyIcon = asComponent(copyIconEl);
 export const CheckIcon = asComponent(checkIconEl);
 
+export function TimeSortIcon({ ascending }: { ascending: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={ascending ? "M4 7h4M4 12h7M4 17h10" : "M4 7h10M4 12h7M4 17h4"} />
+      <path d={ascending ? "M19 19V5m-3 3 3-3 3 3" : "M19 5v14m-3-3 3 3 3-3"} />
+    </svg>
+  );
+}
+
 /**
  * Tabler "star" (outline). Excalidraw has no star icon, but this path is from
  * the same Tabler set Excalidraw sources its icons from, so it matches.

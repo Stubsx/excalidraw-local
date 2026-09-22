@@ -1,8 +1,6 @@
 import { memo, useCallback, useEffect, useRef } from "react";
 import { Excalidraw, WelcomeScreen } from "@excalidraw/excalidraw";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
-import { exportToBlob } from "@excalidraw/utils/export";
-import { getNonDeletedElements } from "@excalidraw/element";
 
 import type { Theme } from "@excalidraw/element/types";
 import type {
@@ -13,6 +11,7 @@ import type {
 import { saveEditorState, setThumbnail } from "../db/sceneStore";
 import { writeFileScene } from "../folderStore";
 import { createAutosave, type Autosave } from "../autosave";
+import { renderThumbnail } from "../thumbnails";
 
 import type { SavedScene } from "../db/types";
 import type { TabKind } from "../tabs";
@@ -62,26 +61,13 @@ export const EditorPane = memo(
               expectedContent.current,
             );
             expectedContent.current = snapshot;
-            const elements = getNonDeletedElements(snapshot.elements);
             // Thumbnail failure must not turn a successfully saved scene into an error.
             try {
-              if (elements.length) {
-                const blob = await exportToBlob({
-                  elements,
-                  appState: { ...snapshot.appState, exportBackground: true },
-                  files: snapshot.files,
-                  maxWidthOrHeight: 200,
-                });
-                const data = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = () => resolve(String(reader.result));
-                  reader.onerror = () => reject(reader.error);
-                  reader.readAsDataURL(blob);
-                });
-                await setThumbnail(refId, data);
-              } else {
-                await setThumbnail(refId, "");
-              }
+              await setThumbnail(
+                refId,
+                await renderThumbnail(snapshot),
+                snapshot,
+              );
             } catch (e) {
               console.warn("Thumbnail update failed", e);
             }

@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-local",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
   "description": "Local-first Excalidraw desktop app with file management and Agent CLI",

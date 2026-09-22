@@ -7,6 +7,7 @@ import {
 import {
   queryScenes,
   type SceneListItem,
+  type SceneSortOrder,
   deleteScene,
   toggleStarred,
   renameScene,
@@ -33,12 +34,16 @@ import {
   CloseIcon,
   PencilIcon,
   MoreIcon,
+  TimeSortIcon,
   searchIcon as SearchIcon,
 } from "../icons";
+
+import { SceneThumbnail } from "./SceneThumbnail";
 
 import type { FolderHistoryEntry } from "../db/types";
 
 type View = "library" | "folder";
+const SORT_KEY = "excal-library-time-order";
 
 interface SidebarProps {
   onOpenScene: (sceneId: string) => void;
@@ -89,6 +94,13 @@ export function Sidebar({
   const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [starredOnly, setStarredOnly] = useState(false);
+  const [order, setOrder] = useState<SceneSortOrder>(() => {
+    try {
+      return localStorage.getItem(SORT_KEY) === "oldest" ? "oldest" : "newest";
+    } catch {
+      return "newest";
+    }
+  });
   const [error, setError] = useState<string | null>(null);
 
   // On first mount, restore folder history from the KV store. If there's a
@@ -125,12 +137,13 @@ export function Sidebar({
     const rows = await queryScenes({
       search: search.trim() || undefined,
       starredOnly,
+      order,
     });
     if (request === libraryLoad.current) {
       setItems(rows);
       setError(null);
     }
-  }, [search, starredOnly]);
+  }, [search, starredOnly, order]);
 
   const reloadFolder = useCallback(async () => {
     const request = ++folderLoad.current;
@@ -350,16 +363,40 @@ export function Sidebar({
           </span>
         </span>
         {view === "library" && (
-          <button
-            className={`excal-btn excal-btn--ghost excal-filter${
-              starredOnly ? " excal-filter--active" : ""
-            }`}
-            aria-pressed={starredOnly}
-            title="只看收藏"
-            onClick={() => setStarredOnly((s) => !s)}
-          >
-            {starredOnly ? <StarFilledIcon /> : <StarIcon />}收藏
-          </button>
+          <div className="excal-list-controls">
+            <button
+              className="excal-btn excal-btn--icon excal-btn--ghost excal-time-sort"
+              aria-label={`按修改时间排序：${
+                order === "newest" ? "最新优先" : "最早优先"
+              }`}
+              title={`${
+                order === "newest"
+                  ? "最新修改优先，点击切换为最早优先"
+                  : "最早修改优先，点击切换为最新优先"
+              }`}
+              onClick={() => {
+                const next = order === "newest" ? "oldest" : "newest";
+                setOrder(next);
+                try {
+                  localStorage.setItem(SORT_KEY, next);
+                } catch {
+                  // Sorting remains usable when preference storage is unavailable.
+                }
+              }}
+            >
+              <TimeSortIcon ascending={order === "oldest"} />
+            </button>
+            <button
+              className={`excal-btn excal-btn--ghost excal-filter${
+                starredOnly ? " excal-filter--active" : ""
+              }`}
+              aria-pressed={starredOnly}
+              title="只看收藏"
+              onClick={() => setStarredOnly((s) => !s)}
+            >
+              {starredOnly ? <StarFilledIcon /> : <StarIcon />}收藏
+            </button>
+          </div>
         )}
       </div>
       {error && (
@@ -465,10 +502,6 @@ export function Sidebar({
           ))}
       </div>
       <footer className="excal-sidebar-footer">
-        <span className="excal-storage-note">
-          <span className="excal-local-dot" />
-          图稿保存在此 Mac
-        </span>
         <button className="excal-btn excal-btn--ghost" onClick={onOpenSettings}>
           <SettingsIcon />
           设置与 AI 技能<kbd>⌘ ,</kbd>
@@ -670,13 +703,7 @@ function LibraryItem({
           title={name}
           aria-current={active ? "page" : undefined}
         >
-          <span className="excal-thumb">
-            {item.thumbnail ? (
-              <img src={item.thumbnail} alt="" />
-            ) : (
-              <ImageIcon />
-            )}
-          </span>
+          <SceneThumbnail item={item} />
           <span className="excal-row-meta">
             <span className="excal-row-name">{name}</span>
             <span className="excal-row-time">
