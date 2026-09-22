@@ -14,6 +14,7 @@ import { Welcome } from "./components/Welcome";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { installRenderListener } from "./render/ipcListener";
 import { useTabs } from "./tabs";
+import { getWorkspaceShortcut } from "./shortcuts";
 import { appLayoutStyle } from "./styles";
 
 // Excalidraw's CSS variables (colors, fonts, radii) are scoped to `.excalidraw`.
@@ -227,40 +228,22 @@ function App() {
   }, [newTab, refreshSidebar]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (
-        !bootstrapped ||
-        settingsOpen ||
-        busy ||
-        event.repeat ||
-        event.isComposing ||
-        !(event.metaKey || event.ctrlKey) ||
-        event.altKey
-      ) {
+      if (!bootstrapped || settingsOpen || busy) {
         return;
       }
-      // Do not take shortcuts from editor dialogs or text composition.
-      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      let action: (() => void) | undefined;
-      if (!event.shiftKey && key === "n") {
-        action = createScene;
-      }
-      if (!event.shiftKey && key === "o") {
-        action = () => {
+      const shortcut = getWorkspaceShortcut(event);
+      const actions = {
+        new: createScene,
+        open: () => {
           void pickFile();
-        };
-      }
-      if (!event.shiftKey && key === ",") {
-        action = openSettings;
-      }
-      if (event.shiftKey && key === "f") {
-        action = () => {
+        },
+        settings: openSettings,
+        search: () => {
           searchRef.current?.focus();
           searchRef.current?.select();
-        };
-      }
+        },
+      };
+      const action = shortcut ? actions[shortcut] : undefined;
       if (action) {
         event.preventDefault();
         event.stopPropagation();
