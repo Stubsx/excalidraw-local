@@ -17,7 +17,7 @@ yarn workspace excalidraw-local release --preview
 
 1. 把同一套 Developer ID Application 证书和私钥保存在 macOS 钥匙串，另做加密备份。私钥不进入 Git。
 2. 使用 `xcrun notarytool store-credentials excal-release` 在钥匙串建立公证凭据（Apple ID、Team ID、App 专用密码）；不要把密码写进脚本或日志。
-3. 设定 `APPLE_SIGNING_IDENTITY` 为该证书的完整名称或 SHA-1 指纹，`APPLE_NOTARY_PROFILE=excal-release`。
+3. 设定 `APPLE_SIGNING_IDENTITY` 为该证书的完整名称或 SHA-1 指纹，`APPLE_NOTARY_PROFILE=excal-release`。若凭据位于独立钥匙串，另设 `APPLE_NOTARY_KEYCHAIN` 为该钥匙串绝对路径（CI 已配置）。
 4. 运行 `yarn workspace excalidraw-local release`。脚本先检查证书，执行类型检查、前端/CLI/Rust 测试；校验 Node SHA-256，签名内置 Node 和 App；公证、装订 App；创建 DMG；再签名、公证、装订 DMG。
 
 缺少身份或公证凭据时，正式发布直接失败，不会悄悄退回未签名包。Node 使用 Apple Silicon / Intel 原生版本；macOS 最低版本为 12.0，内置 Node 二进制的最低目标为 macOS 11.0。

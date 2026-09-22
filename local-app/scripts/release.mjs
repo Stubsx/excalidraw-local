@@ -38,6 +38,13 @@ if (
   );
 const identity = process.env.APPLE_SIGNING_IDENTITY;
 const profile = process.env.APPLE_NOTARY_PROFILE;
+const notaryCredentials = [
+  "--keychain-profile",
+  profile,
+  ...(process.env.APPLE_NOTARY_KEYCHAIN
+    ? ["--keychain", process.env.APPLE_NOTARY_KEYCHAIN]
+    : []),
+];
 if (!preview && (!identity || !profile))
   throw new Error(
     "A signed release requires APPLE_SIGNING_IDENTITY and APPLE_NOTARY_PROFILE. Use --preview only for an explicitly unsigned test build.",
@@ -126,8 +133,7 @@ try {
       "notarytool",
       "submit",
       zip,
-      "--keychain-profile",
-      profile,
+      ...notaryCredentials,
       "--wait",
       "--timeout",
       "30m",
@@ -157,8 +163,7 @@ try {
       "notarytool",
       "submit",
       candidate,
-      "--keychain-profile",
-      profile,
+      ...notaryCredentials,
       "--wait",
       "--timeout",
       "30m",

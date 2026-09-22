@@ -64,6 +64,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_NOTARY_PROFILE: excal-release
+          APPLE_NOTARY_KEYCHAIN: ${{ runner.temp }}/release.keychain-db
         run: yarn workspace excalidraw-local release
       - uses: actions/upload-artifact@v4
         with:
