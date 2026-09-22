@@ -1,654 +1,907 @@
-/**
- * Excalidraw Local — app chrome styling.
- *
- * The chrome (Sidebar / TabBar / loading) is rendered inside an `.excalidraw`
- * wrapper (see main.tsx), so it inherits Excalidraw's CSS variables directly:
- *   --island-bg-color, --sidebar-bg-color, --sidebar-border-color,
- *   --text-primary-color, --color-primary, --color-on-surface, --ui-font,
- *   --border-radius-lg, --space-factor, --shadow-island, ...
- * (defined in packages/excalidraw/css/theme.scss + styles.scss). Toggling
- * `theme--dark` on the wrapper flips all of them, so the chrome follows the
- * editor's light/dark mode automatically.
- *
- * This file only adds:
- *   1. Variable fallbacks so the chrome still renders if ever used without the
- *      `.excalidraw` context (defensive — not the normal path).
- *   2. Button / input / tab recipes that mirror Excalidraw's own
- *      `outlineButtonStyles` mixin (packages/excalidraw/css/variables.module.scss)
- *      and the sidebar tab-trigger pattern (Sidebar.scss), so the chrome's
- *      interactive elements look identical to the editor's.
- */
-
+/* Desktop chrome: quiet paper surfaces, ink typography, restrained violet accents.
+   Keep selectors local so the drawing editor retains its own component styles. */
 .excalidraw.excal-chrome-root {
-  /* ---- defensive fallbacks (only used if .excalidraw vars are absent) ---- */
-  --island-bg-color: #ffffff;
-  --sidebar-bg-color: var(--island-bg-color);
-  --sidebar-border-color: #f1f0ff;
-  --default-border-color: #f1f0ff;
-  --text-primary-color: #1b1b1f;
-  --color-on-surface: #1b1b1f;
-  --color-primary: #6965db;
-  --color-primary-darker: #5b57d1;
-  --color-icon-white: #ffffff;
-  --color-gray-60: #7a7a7a;
-  --color-surface-mid: #f6f6f9;
-  --color-surface-high: #f1f0ff;
-  --color-surface-primary-container: #e0dfff;
-  --color-on-primary-container: #4a47b1;
-  --border-radius-lg: 0.5rem;
-  --border-radius-md: 0.375rem;
-  --space-factor: 0.25rem;
-  --default-button-size: 2rem;
-  --default-icon-size: 1rem;
-  --shadow-island: 0 0 1px 0 rgba(0, 0, 0, 0.17), 0 0 3px 0 rgba(0, 0, 0, 0.08),
-    0 7px 14px 0 rgba(0, 0, 0, 0.05);
-  --ui-font: Assistant, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-
-  /* danger / destructive (mirrors theme.scss --button-destructive-*) */
-  --excal-danger: #db6965;
-  --excal-star: #f5c354;
-
-  &.theme--dark {
-    --island-bg-color: #232329;
-    --sidebar-border-color: #2e2d39;
-    --default-border-color: #2e2d39;
-    --text-primary-color: #e3e3e8;
-    --color-on-surface: #e3e3e8;
-    --color-primary: #a8a5ff;
-    --color-primary-darker: #b2aeff;
-    --color-gray-60: #8e8d9c;
-    --color-surface-mid: hsl(240 6% 10%);
-    --color-surface-high: #2e2d39;
-    --color-surface-primary-container: #403e6a;
-    --color-on-primary-container: #c9c6ff;
-    --excal-danger: #ffa8a5;
-    --excal-star: #f5c354;
-  }
+  color-scheme: light;
+  --island-bg-color: #fff;
+  --sidebar-border-color: #e5e5ea;
+  --default-border-color: #dedee6;
+  --text-primary-color: #262630;
+  --color-on-surface: #262630;
+  --color-primary: #625bd0;
+  --color-primary-darker: #534bbb;
+  --color-gray-60: #72727e;
+  --color-surface-mid: #f5f5f8;
+  --color-surface-high: #edecf3;
+  --color-surface-primary-container: #eeecfb;
+  --color-on-primary-container: #524ab3;
+  --chrome-text-muted: #72727e;
+  --chrome-sidebar: #f8f8fa;
+  --chrome-workspace: #fcfcfd;
+  --chrome-primary-ink: #fff;
+  --chrome-dot: #dedde7;
+  --excal-danger: #bf4047;
+  --excal-star: #ab7c20;
+  --excal-success: #42816a;
+  --default-icon-size: 16px;
+  --default-button-size: 34px;
+  --ui-font: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  font-family: var(--ui-font);
+  color: var(--text-primary-color);
+  -webkit-font-smoothing: antialiased;
 }
-
-/* ------------------------------------------------------------------ *
- * Button recipe — mirrors `outlineButtonStyles`
- * (packages/excalidraw/css/variables.module.scss:107)
- * Use: <button class="excal-btn"> / .excal-btn--active / .excal-btn--primary
- * ------------------------------------------------------------------ */
+.excalidraw.excal-chrome-root.theme--dark {
+  color-scheme: dark;
+  --island-bg-color: #24242b;
+  --sidebar-border-color: #36363f;
+  --default-border-color: #45454f;
+  --text-primary-color: #ededf3;
+  --color-on-surface: #ededf3;
+  --color-primary: #b3adff;
+  --color-primary-darker: #c5c0ff;
+  --color-gray-60: #a3a3b1;
+  --color-surface-mid: #2e2e37;
+  --color-surface-high: #383843;
+  --color-surface-primary-container: #38344f;
+  --color-on-primary-container: #cec9ff;
+  --chrome-text-muted: #a3a3b1;
+  --chrome-sidebar: #202027;
+  --chrome-workspace: #1c1c22;
+  --chrome-primary-ink: #25213f;
+  --chrome-dot: #3c3c47;
+  --excal-danger: #ff999e;
+  --excal-star: #e6ba62;
+  --excal-success: #86c9ad;
+}
+.excal-btn,
+.excal-input,
+.excal-row-open,
+.excal-row-menu button,
+.excal-tab-select,
+.excal-folder-select,
+.excal-ai-entry {
+  font-family: var(--ui-font);
+  font-size: 13px;
+  box-sizing: border-box;
+}
 .excal-btn {
   display: inline-flex;
-  justify-content: center;
   align-items: center;
-  gap: 0.375rem;
-  box-sizing: border-box;
-  padding: 0.375rem 0.625rem;
+  justify-content: center;
+  gap: 7px;
   height: var(--default-button-size);
-  border: 1px solid var(--button-border, var(--default-border-color));
-  border-radius: var(--border-radius-lg);
-  background-color: var(--button-bg, var(--island-bg-color));
-  color: var(--button-color, var(--color-on-surface));
-  font-family: var(--ui-font);
-  font-size: 0.8rem;
+  flex-shrink: 0;
+  padding: 0 12px;
+  border: 1px solid var(--default-border-color);
+  border-radius: 7px;
+  background: var(--island-bg-color);
+  color: var(--text-primary-color);
   cursor: pointer;
-  transition: background-color 0.1s, border-color 0.1s, color 0.1s;
-
-  svg {
-    width: var(--default-icon-size);
-    height: var(--default-icon-size);
-  }
-
-  &:hover {
-    background-color: var(--button-hover-bg, var(--color-surface-mid));
-    border-color: var(
-      --button-hover-border,
-      var(--button-border, var(--default-border-color))
-    );
-    color: var(
-      --button-hover-color,
-      var(--button-color, var(--text-primary-color))
-    );
-  }
-
-  &:active {
-    background-color: var(--button-active-bg, var(--color-surface-high));
-  }
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms;
 }
-
-/* icon-only square button (new / star / trash / search-action) */
+.excal-btn:hover {
+  background: var(--color-surface-mid);
+}
+.excal-btn:active {
+  background: var(--color-surface-high);
+}
+.excal-btn svg,
+.excal-row-menu svg,
+.excal-folder-select svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
 .excal-btn--icon {
   width: var(--default-button-size);
   padding: 0;
 }
-
-/* selected/active toggle (mirrors `.active` / `ToolIcon--checked`) */
-.excal-btn--active {
-  --button-bg: var(--color-primary);
-  --button-border: var(--color-primary);
-  --button-color: var(--color-icon-white);
-  --button-hover-bg: var(--color-primary-darker);
-  --button-hover-border: var(--color-primary-darker);
-  --button-hover-color: var(--color-icon-white);
-}
-
-/* primary filled action button */
-.excal-btn--primary {
-  --button-bg: var(--color-primary);
-  --button-border: var(--color-primary);
-  --button-color: var(--color-icon-white);
-  --button-hover-bg: var(--color-primary-darker);
-  --button-hover-border: var(--color-primary-darker);
-  --button-hover-color: var(--color-icon-white);
-}
-
-/* borderless ghost button (tab close, inline row actions) */
 .excal-btn--ghost {
-  --button-bg: transparent;
-  --button-border: transparent;
-  --button-hover-bg: var(--color-surface-mid);
-  --button-hover-border: transparent;
-  border: 1px solid transparent;
+  background: transparent;
+  border-color: transparent;
 }
-
-/* ------------------------------------------------------------------ *
- * Search input — matches Excalidraw text inputs (border-radius-md,
- * island-bg surface, surface-high border on focus).
- * ------------------------------------------------------------------ */
+.excal-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--chrome-primary-ink);
+}
+.excal-btn--primary:hover {
+  background: var(--color-primary-darker);
+  border-color: var(--color-primary-darker);
+}
+.excal-btn--active {
+  background: var(--island-bg-color);
+  border-color: var(--sidebar-border-color);
+  color: var(--color-on-primary-container);
+  box-shadow: 0 1px 3px #00000007;
+}
+.excal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.excal-chrome-root
+  :is(.excal-btn, .excal-input, .excal-row-open, .excal-tab-select, .excal-folder-select, .excal-ai-entry, .excal-row-menu
+    button):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.excal-chrome-root kbd {
+  font: 11px var(--ui-font);
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
 .excal-input {
-  box-sizing: border-box;
-  padding: 0.4rem 0.625rem;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--default-border-color);
-  border-radius: var(--border-radius-md);
-  background-color: var(--island-bg-color);
+  border-radius: 7px;
+  background: var(--island-bg-color);
   color: var(--text-primary-color);
-  font-family: var(--ui-font);
-  font-size: 0.8rem;
-  outline: none;
-  transition: border-color 0.1s;
-
-  &::placeholder {
-    color: var(--color-gray-60);
-  }
-
-  &:focus {
-    border-color: var(--color-primary);
-  }
 }
-
-/* ------------------------------------------------------------------ *
- * Sidebar scene/folder row item — hover & active states use the same
- * surface tokens as Excalidraw's library items (LibraryMenu.scss).
- * ------------------------------------------------------------------ */
+.excal-input::placeholder {
+  color: var(--color-gray-60);
+}
+.excal-sidebar-host {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+}
+.excal-sidebar {
+  width: 280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome-sidebar);
+  border-right: 1px solid var(--sidebar-border-color);
+  box-sizing: border-box;
+}
+.excal-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 20px 19px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.excal-brand > svg {
+  width: 32px;
+  height: 32px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.excal-brand strong {
+  font-weight: 500;
+  color: var(--color-gray-60);
+}
+.excal-brand small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-gray-60);
+  letter-spacing: 0.11em;
+  margin-top: 3px;
+}
+.excal-sidebar-create {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 20px;
+}
+.excal-sidebar-create > .excal-btn:first-child {
+  flex: 1;
+  justify-content: flex-start;
+}
+.excal-sidebar-create kbd {
+  margin-left: auto;
+}
+.excal-view-switch {
+  display: flex;
+  gap: 3px;
+  margin: 0 16px 14px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--color-surface-high);
+}
+.excal-view-switch .excal-btn {
+  flex: 1;
+  height: 30px;
+  font-size: 12px;
+}
+.excal-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 16px 10px;
+}
+.excal-search > svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--color-gray-60);
+  pointer-events: none;
+}
+.excal-search .excal-input {
+  width: 100%;
+  padding-left: 33px;
+  padding-right: 30px;
+  font-size: 12px;
+}
+.excal-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.excal-search .excal-btn {
+  position: absolute;
+  right: 3px;
+  width: 27px;
+  height: 27px;
+}
+.excal-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 18px 6px;
+  font-size: 11px;
+  color: var(--color-gray-60);
+}
+.excal-count {
+  margin-left: 7px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.excal-filter {
+  height: 27px;
+  padding: 0 5px;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-gray-60);
+}
+.excal-filter svg {
+  width: 13px;
+  height: 13px;
+}
+.excal-filter--active {
+  color: var(--excal-star);
+  background: var(--color-surface-high);
+}
+.excal-scene-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+  scrollbar-width: thin;
+}
 .excal-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem;
-  border-radius: var(--border-radius-md);
-  cursor: pointer;
-  transition: background-color 0.1s;
-
-  &:hover {
-    background-color: var(--color-surface-mid);
-  }
-
-  &.excal-row--active {
-    background-color: var(--color-surface-primary-container);
-    color: var(--color-on-primary-container);
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Tab bar tab — active tab mirrors `sidebar-tab-trigger[data-state=active]`
- * (Sidebar.scss:138): solid primary surface with white text.
- * ------------------------------------------------------------------ */
-.excal-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  margin-right: 0.125rem;
+  gap: 2px;
   border: 1px solid transparent;
-  border-radius: var(--border-radius-md);
-  color: var(--color-gray-60);
-  font-family: var(--ui-font);
-  font-size: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 3px;
+  min-height: 60px;
+  transition: background 120ms;
+}
+.excal-row:hover,
+.excal-row:focus-within {
+  background: var(--color-surface-high);
+}
+.excal-row--active,
+.excal-row--active:hover,
+.excal-row--active:focus-within {
+  background: var(--color-surface-primary-container);
+  border-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+.excal-row-open {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  padding: 9px 0 9px 8px;
+  text-align: left;
+  color: inherit;
   cursor: pointer;
-  user-select: none;
-  transition: background-color 0.1s, color 0.1s;
-  max-width: 200px;
-
-  &:hover {
-    background-color: var(--color-surface-mid);
-    color: var(--text-primary-color);
-  }
-
-  &.excal-tab--active {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    color: var(--color-icon-white);
-
-    &:hover {
-      background-color: var(--color-primary-darker);
-      color: var(--color-icon-white);
-    }
-  }
+  border-radius: 7px;
 }
-
-/* ------------------------------------------------------------------ *
- * Sidebar footer (settings button)
- * ------------------------------------------------------------------ */
-.excal-sidebar-footer {
+.excal-thumb {
+  width: 42px;
+  height: 34px;
   flex-shrink: 0;
-  padding: 0.375rem 0.5rem;
-  border-top: 1px solid var(--sidebar-border-color);
-
-  .excal-btn {
-    width: 100%;
-    font-size: 0.8rem;
-    color: var(--color-gray-60);
-
-    &:hover {
-      color: var(--text-primary-color);
-    }
-  }
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 5px;
+  border: 1px solid var(--sidebar-border-color);
+  background: var(--island-bg-color);
+  color: var(--color-gray-60);
 }
-
-/* ------------------------------------------------------------------ *
- * Settings panel (right drawer) — used by the CLI installer UI.
- * Mirrors the sidebar surface tokens (island bg, sidebar border).
- * ------------------------------------------------------------------ */
+.excal-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+.excal-thumb > svg {
+  width: 17px;
+  height: 17px;
+  opacity: 0.6;
+}
+.excal-row-meta {
+  min-width: 0;
+  flex: 1;
+}
+.excal-row-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.excal-row-time {
+  color: var(--color-gray-60);
+  font-size: 10px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 1px;
+}
+.excal-row-time svg {
+  width: 11px;
+  height: 11px;
+  color: var(--excal-star);
+}
+.excal-row-more {
+  width: 27px;
+  height: 30px;
+  margin-right: 5px;
+  color: var(--color-gray-60);
+  opacity: 0.35;
+}
+.excal-row:hover .excal-row-more,
+.excal-row:focus-within .excal-row-more,
+.excal-row-more[aria-expanded="true"] {
+  opacity: 1;
+}
+.excal-row-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.excal-row-rename > svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.excal-row-rename input {
+  width: 100%;
+}
+.excal-row-menu {
+  position: fixed;
+  z-index: 150;
+  min-width: 164px;
+  padding: 5px;
+  border: 1px solid var(--default-border-color);
+  border-radius: 9px;
+  background: var(--island-bg-color);
+  box-shadow: 0 8px 28px #00000020;
+}
+.excal-row-menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--text-primary-color);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.excal-row-menu button:hover {
+  background: var(--color-surface-mid);
+}
+.excal-row-menu .excal-danger-action {
+  color: var(--excal-danger);
+  border-top: 1px solid var(--sidebar-border-color);
+  border-radius: 0 0 5px 5px;
+  margin-top: 4px;
+}
+.excal-list-empty {
+  padding: 25px 14px;
+  text-align: center;
+  color: var(--color-gray-60);
+  font-size: 12px;
+}
+.excal-list-empty > svg {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 16px;
+  opacity: 0.55;
+}
+.excal-list-empty strong {
+  display: block;
+  color: var(--text-primary-color);
+  font-weight: 500;
+}
+.excal-list-empty p {
+  line-height: 1.8;
+  margin: 8px 0 16px;
+  font-size: 11px;
+}
+.excal-list-empty button {
+  font-size: 12px;
+}
+.excal-sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--sidebar-border-color);
+}
+.excal-storage-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 7px;
+  color: var(--color-gray-60);
+  font-size: 10px;
+}
+.excal-local-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--excal-success);
+}
+.excal-local-dot--error {
+  background: var(--excal-danger);
+}
+.excal-local-dot--pending {
+  background: var(--excal-star);
+}
+.excal-sidebar-footer .excal-btn {
+  width: 100%;
+  justify-content: flex-start;
+  font-size: 12px;
+}
+.excal-sidebar-footer kbd {
+  margin-left: auto;
+}
+.excal-folder-section {
+  padding: 0 16px 10px;
+  max-height: 30%;
+  overflow-y: auto;
+}
+.excal-folder-open {
+  width: 100%;
+  border-style: dashed;
+  font-size: 12px;
+}
+.excal-folder-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+}
+.excal-folder-chip {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.excal-folder-chip--active {
+  background: var(--color-surface-primary-container);
+  color: var(--color-on-primary-container);
+}
+.excal-folder-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+.excal-folder-select span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excal-folder-chip > .excal-btn {
+  width: 26px;
+  height: 26px;
+}
+.excal-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 49px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sidebar-border-color);
+  background: var(--chrome-sidebar);
+}
+.excal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 5px 2px;
+}
+.excal-tab {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 184px;
+  height: 35px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--color-gray-60);
+}
+.excal-tab:hover {
+  background: var(--color-surface-high);
+}
+.excal-tab--active {
+  background: var(--island-bg-color);
+  border-color: var(--sidebar-border-color);
+  color: var(--text-primary-color);
+  box-shadow: 0 1px 3px #00000006;
+}
+.excal-tab--active:hover {
+  background: var(--island-bg-color);
+}
+.excal-tab--active .excal-tab-select > svg {
+  color: var(--color-primary);
+}
+.excal-tab-select {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.excal-tab-select > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.excal-tab-select > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excal-tab-close {
+  width: 26px;
+  height: 26px;
+  margin-right: 3px;
+  color: var(--color-gray-60);
+}
+.excal-tab-close svg {
+  width: 13px;
+  height: 13px;
+}
+.excal-dirty-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
+}
+.excal-workspace-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-gray-60);
+  padding-left: 10px;
+}
+.excal-workspace-label span {
+  margin: 0 10px;
+  opacity: 0.4;
+}
+.excal-editor-status {
+  height: 28px;
+  padding: 0 16px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--chrome-sidebar);
+  border-top: 1px solid var(--sidebar-border-color);
+  font-size: 10px;
+  color: var(--color-gray-60);
+}
+.excal-editor-status > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excal-editor-status > span:last-child {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.excal-status-separator {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+/* The welcome canvas uses a small drawn motif rather than stock artwork. */
+.excal-welcome {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: var(--chrome-workspace);
+  background-image: radial-gradient(var(--chrome-dot) 0.6px, transparent 0.6px);
+  background-size: 20px 20px;
+}
+.excal-welcome-content {
+  width: min(480px, calc(100% - 64px));
+  margin: auto;
+  padding: 40px 0 36px;
+  animation: excal-welcome-in 300ms ease-out;
+}
+.excal-welcome-sketch {
+  width: 230px;
+  height: 92px;
+  margin: 0 0 23px -6px;
+}
+.excal-welcome-sketch svg {
+  width: 100%;
+  height: 100%;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.sketch-line {
+  stroke: var(--color-gray-60);
+}
+.sketch-paper {
+  stroke: var(--color-gray-60);
+  fill: var(--island-bg-color);
+}
+.sketch-accent {
+  stroke: var(--color-primary);
+  fill: var(--color-surface-primary-container);
+}
+.sketch-spark {
+  stroke: var(--excal-star);
+}
+.excal-eyebrow {
+  display: block;
+  font-size: 11px;
+  color: var(--color-gray-60);
+  letter-spacing: 0.15em;
+}
+.excal-welcome h1 {
+  margin: 13px 0 18px;
+  font-size: clamp(28px, 3.5vw, 38px);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.045em;
+}
+.excal-welcome-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-gray-60);
+  line-height: 1.9;
+}
+.excal-welcome-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 28px;
+}
+.excal-welcome-actions .excal-btn {
+  height: 42px;
+  padding: 0 15px;
+  gap: 8px;
+}
+.excal-welcome-actions kbd {
+  margin-left: 12px;
+}
+.excal-welcome-note {
+  margin: 12px 0 30px;
+  font-size: 11px;
+  color: var(--color-gray-60);
+}
+.excal-ai-entry {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 18px 0 0;
+  color: var(--text-primary-color);
+  border: 0;
+  border-top: 1px solid var(--sidebar-border-color);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.excal-ai-entry-icon {
+  width: 35px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--color-surface-primary-container);
+  color: var(--color-on-primary-container);
+}
+.excal-ai-entry svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.excal-ai-entry strong {
+  display: block;
+  font-weight: 500;
+  font-size: 12px;
+}
+.excal-ai-entry small {
+  display: block;
+  margin-top: 5px;
+  color: var(--color-gray-60);
+  font-size: 11px;
+}
+.excal-ai-entry > svg {
+  margin-left: auto;
+  color: var(--color-gray-60);
+  transition: transform 150ms;
+}
+.excal-ai-entry:hover > svg {
+  transform: translateX(4px);
+  color: var(--color-primary);
+}
+.excal-welcome-footer {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 24px;
+  color: var(--color-gray-60);
+  font-size: 10px;
+}
+.excal-welcome-footer > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* Settings: one scrollable body, always-visible installation action. */
 .excal-settings-backdrop {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.25);
-  animation: excal-fade-in 0.12s ease;
+  background: #16162255;
+  animation: excal-fade-in 140ms ease;
 }
-
 .excal-settings-panel {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   z-index: 201;
-  width: 420px;
-  max-width: 90vw;
+  width: 480px;
+  max-width: 92vw;
   display: flex;
   flex-direction: column;
-  background-color: var(--island-bg-color);
-  border-left: 1px solid var(--sidebar-border-color);
-  box-shadow: var(--shadow-island);
-  font-family: var(--ui-font);
+  background: var(--island-bg-color);
   color: var(--text-primary-color);
-  animation: excal-slide-in 0.16s ease;
+  border-left: 1px solid var(--sidebar-border-color);
+  box-shadow: -12px 0 50px #00000015;
+  animation: excal-slide-in 180ms ease;
 }
-
 .excal-settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.875rem 1rem;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--sidebar-border-color);
-
-  h2 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-  }
 }
-
+.excal-settings-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.excal-settings-header p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--color-gray-60);
+}
 .excal-settings-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 0 24px 8px;
 }
-
-.excal-settings-section {
-  h3 {
-    margin: 0 0 0.25rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-
-    code {
-      font-family: var(--ui-font);
-      background: var(--color-surface-mid);
-      padding: 0.05em 0.35em;
-      border-radius: var(--space-factor);
-      font-size: 0.85em;
-    }
-  }
-}
-
-.excal-settings-desc {
-  margin: 0 0 0.75rem;
-  font-size: 0.78rem;
-  color: var(--color-gray-60);
-  line-height: 1.4;
-
-  code {
-    font-family: var(--ui-font);
-    background: var(--color-surface-mid);
-    padding: 0.05em 0.3em;
-    border-radius: var(--space-factor);
-  }
-}
-
-/* status list */
-.excal-status-list {
-  list-style: none;
-  margin: 0 0 0.75rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.excal-status-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  background: var(--color-surface-mid);
-  border-radius: var(--border-radius-md);
-  font-size: 0.8rem;
-
-  /* hint spans the full width below */
-  .excal-status-hint {
-    grid-column: 1 / -1;
-    color: var(--color-gray-60);
-    font-size: 0.72rem;
-  }
-}
-
-.excal-status-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-}
-
-.excal-status-label {
-  color: var(--color-gray-60);
-}
-
-.excal-status-value {
-  font-family: var(--ui-font);
-  text-align: right;
-  word-break: break-all;
-}
-
-/* action buttons row */
-.excal-settings-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-/* PATH hint box */
-.excal-pathhint {
-  margin: 0 0 0.75rem;
-  padding: 0.625rem;
-  background: var(--color-surface-mid);
-  border-radius: var(--border-radius-md);
-  font-size: 0.78rem;
-
-  p {
-    margin: 0 0 0.5rem;
-    color: var(--color-gray-60);
-  }
-
-  .excal-btn {
-    margin-top: 0.4rem;
-  }
-}
-
-/* Node install block — one-click installer shown when Node is missing/old. */
-.excal-node-install {
-  margin: 0 0 0.75rem;
-  padding: 0.625rem;
-  background: var(--color-surface-mid);
-  border-radius: var(--border-radius-md);
-
-  .excal-btn {
-    margin-bottom: 0.4rem;
-  }
-}
-
-/* Progress bar for the Node download/install. */
-.excal-progress {
-  margin-top: 0.5rem;
-  font-size: 0.72rem;
-  color: var(--color-gray-60);
-}
-
-.excal-progress-track {
-  height: 6px;
-  background: var(--default-bg-color);
-  border: 1px solid var(--sidebar-border-color);
-  border-radius: 999px;
-  overflow: hidden;
-  margin-bottom: 0.3rem;
-}
-
-.excal-progress-bar {
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: 999px;
-  /* Indeterminate-ish pulse when there's no concrete percent. */
-  transition: width 0.3s ease;
-}
-
-.excal-progress-label {
-  display: block;
-  line-height: 1.4;
-}
-
-/* Inline rename input inside a sidebar library row — compact to fit row height. */
-.excal-rename-input {
-  width: 100%;
-  padding: 0.15rem 0.4rem;
-  font-size: 0.82rem;
-  margin-top: -1px;
-  margin-bottom: 2px;
-}
-
-.excal-codeblock {
+.excal-settings-body h3 {
   margin: 0;
-  padding: 0.5rem 0.625rem;
-  background: var(--default-bg-color);
-  border: 1px solid var(--sidebar-border-color);
-  border-radius: var(--border-radius-md);
-  overflow-x: auto;
-  font-size: 0.75rem;
-  line-height: 1.5;
-
-  code {
-    font-family: var(--ui-font);
-    white-space: pre;
-  }
+  font-size: 13px;
+  font-weight: 600;
 }
-
-/* toast / inline message */
-.excal-settings-toast {
-  margin: 0 0 0.75rem;
-  padding: 0.5rem 0.625rem;
-  background: var(--color-surface-primary-container);
-  color: var(--color-on-primary-container);
-  border-radius: var(--border-radius-md);
-  font-size: 0.78rem;
-}
-
-/* usage <details> */
-.excal-settings-usage {
-  margin-top: 0.75rem;
-  font-size: 0.78rem;
-
-  summary {
-    cursor: pointer;
-    color: var(--color-gray-60);
-    padding: 0.25rem 0;
-  }
-
-  .excal-codeblock {
-    margin-top: 0.5rem;
-  }
-}
-
-/* drawer animations */
-@keyframes excal-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes excal-slide-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Editor loading gate — shown while the scene is being read.
- * Spinner uses --color-primary so it follows the theme.
- * ------------------------------------------------------------------ */
-.excal-editor-loading {
-  position: absolute;
-  inset: 0;
+.excal-appearance {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  font-family: var(--ui-font);
-  font-size: 0.85rem;
-  color: var(--color-gray-60);
-  background: var(--default-bg-color);
-}
-
-.excal-spinner {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: 3px solid var(--color-surface-high);
-  border-top-color: var(--color-primary);
-  animation: excal-spin 0.7s linear infinite;
-}
-
-@keyframes excal-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Folder switcher — list of open/recent folders at the top of the
- * folder view. Each row is a selectable folder; the × removes it from
- * history (not from disk).
- * ------------------------------------------------------------------ */
-.excal-folder-switcher {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 0;
   border-bottom: 1px solid var(--sidebar-border-color);
-  max-height: 40%;
-  overflow-y: auto;
 }
-
-.excal-folder-chip {
+.excal-theme-switch {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.5rem;
-  border-radius: var(--border-radius-md);
-  cursor: pointer;
-  color: var(--color-gray-60);
-  font-size: 0.78rem;
-  transition: background-color 0.1s, color 0.1s;
-
-  &:hover {
-    background-color: var(--color-surface-mid);
-    color: var(--text-primary-color);
-  }
-
-  &.excal-folder-chip--active {
-    background-color: var(--color-surface-primary-container);
-    color: var(--color-on-primary-container);
-  }
-
-  .excal-folder-chip__icon {
-    flex-shrink: 0;
-    display: flex;
-    color: var(--color-primary);
-  }
-
-  .excal-folder-chip__name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .excal-folder-chip__close {
-    flex-shrink: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    padding: 2px;
-    border-radius: var(--space-factor);
-    color: inherit;
-    opacity: 0.5;
-    display: flex;
-    align-items: center;
-
-    &:hover {
-      opacity: 1;
-      background: var(--color-surface-high);
-    }
-  }
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--color-surface-mid);
 }
-
-.excal-settings-panel {
-  width: 500px;
+.excal-theme-switch .excal-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
 }
 .excal-skill-intro {
-  padding: 8px 2px 24px;
+  padding: 24px 0;
 }
 .excal-settings-eyebrow {
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   color: var(--color-primary);
 }
 .excal-skill-intro h3 {
-  font-size: 26px;
-  line-height: 1.35;
-  margin: 12px 0;
+  margin: 9px 0;
+  font-size: 22px;
   letter-spacing: -0.03em;
 }
 .excal-skill-intro p {
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.85;
   color: var(--color-gray-60);
   margin: 0;
 }
 .excal-skill-example {
-  border-left: 3px solid var(--color-primary);
+  border-left: 2px solid var(--color-primary);
+  padding: 10px 12px;
   background: var(--color-surface-mid);
-  padding: 13px;
-  margin: 18px 0 12px;
-  font-size: 13px;
+  margin: 14px 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .excal-skill-facts {
   display: flex;
+  gap: 14px;
   flex-wrap: wrap;
-  gap: 16px;
-  font-size: 11px;
   color: var(--color-gray-60);
+  font-size: 10px;
 }
 .excal-settings-section {
   margin-bottom: 24px;
@@ -657,31 +910,49 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .excal-section-title .excal-btn {
+  height: 28px;
   font-size: 11px;
+}
+.excal-settings-desc {
+  margin: 7px 0 12px;
+  color: var(--color-gray-60);
+  font-size: 11px;
+  line-height: 1.7;
 }
 .excal-target-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 .excal-target {
-  cursor: pointer;
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
   border: 1px solid var(--sidebar-border-color);
   border-radius: 8px;
-  padding: 12px;
+  cursor: pointer;
+  transition: border-color 120ms;
+}
+.excal-target:hover {
+  border-color: var(--color-gray-60);
 }
 .excal-target--selected {
   border-color: var(--color-primary);
-  background: var(--color-surface-mid);
+  background: var(--color-surface-primary-container);
+}
+.excal-target:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 .excal-target input {
   accent-color: var(--color-primary);
   flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
 }
 .excal-target-copy {
   flex: 1;
@@ -690,13 +961,13 @@
 .excal-target-copy strong {
   display: block;
   font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 4px;
+  font-weight: 500;
+  margin-bottom: 3px;
 }
 .excal-target-copy small {
   display: block;
-  font-size: 10px;
   color: var(--color-gray-60);
+  font-size: 10px;
   overflow-wrap: anywhere;
 }
 .excal-target-state {
@@ -704,54 +975,219 @@
   font-size: 10px;
   color: var(--color-gray-60);
 }
+.excal-target-state--installed {
+  color: var(--excal-success);
+}
 .excal-shell-select {
   width: 100%;
   height: 36px;
+  font-size: 12px;
 }
 .excal-runtime-status {
   margin-top: 10px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-gray-60);
+}
+.excal-settings-footer {
+  flex-shrink: 0;
+  padding: 16px 24px 12px;
+  border-top: 1px solid var(--sidebar-border-color);
+  background: var(--chrome-sidebar);
 }
 .excal-install-button {
   width: 100%;
   min-height: 40px;
 }
+.excal-settings-footnote {
+  margin: 10px 0 0;
+  text-align: center;
+  color: var(--color-gray-60);
+  font-size: 10px;
+  line-height: 1.6;
+}
 .excal-install-result {
-  padding: 14px;
-  border: 1px solid var(--color-primary);
-  border-radius: 8px;
-  margin-bottom: 14px;
-  font-size: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--sidebar-border-color);
+  border-radius: 7px;
+  background: var(--island-bg-color);
+  font-size: 11px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.excal-install-result strong {
+  color: var(--excal-success);
+  font-weight: 600;
 }
 .excal-install-result p {
-  line-height: 1.6;
+  line-height: 1.7;
+  margin: 7px 0;
 }
 .excal-install-result code {
   display: block;
-  font-size: 10px;
   overflow-wrap: anywhere;
-}
-.excal-settings-footnote {
   font-size: 10px;
-  color: var(--color-gray-60);
-  text-align: center;
-  line-height: 1.5;
+}
+.excal-settings-toast {
+  padding: 10px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: var(--island-bg-color);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  max-height: 120px;
+  overflow-y: auto;
 }
 .excal-settings-error,
-.excal-error-banner {
+.excal-error-banner,
+.excal-sidebar-error {
   color: var(--excal-danger);
 }
 .excal-error-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
   background: var(--island-bg-color);
+  border-bottom: 1px solid var(--sidebar-border-color);
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.excal-sidebar-error {
+  padding: 8px 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.excal-sidebar-error .excal-btn {
+  height: 26px;
+  font-size: 11px;
+  color: inherit;
 }
 .excal-operation-status {
-  font-size: 11px;
-  padding: 4px 10px;
+  padding: 4px 16px;
+  font-size: 10px;
   color: var(--color-gray-60);
+  background: var(--island-bg-color);
+}
+@keyframes excal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes excal-slide-in {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes excal-welcome-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (max-width: 960px) {
+  .excal-sidebar {
+    width: 248px;
+  }
+  .excal-welcome-content {
+    width: calc(100% - 48px);
+  }
+  .excal-welcome-actions kbd {
+    display: none;
+  }
+  .excal-welcome-description br {
+    display: none;
+  }
+  .excal-welcome-footer {
+    padding: 14px 24px;
+  }
+}
+@media (max-height: 650px) {
+  .excal-welcome-content {
+    padding-top: 25px;
+    padding-bottom: 20px;
+  }
+  .excal-welcome-sketch {
+    width: 170px;
+    height: 65px;
+    margin-bottom: 16px;
+  }
+  .excal-welcome-actions {
+    margin-top: 20px;
+  }
+  .excal-welcome-note {
+    margin-bottom: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .excal-welcome-content,
+  .excal-settings-panel,
+  .excal-settings-backdrop {
+    animation: none;
+  }
+  .excal-btn,
+  .excal-row,
+  .excal-ai-entry > svg {
+    transition: none;
+  }
+}
+
+/* Guidance belongs to the editor's empty-scene tunnel and disappears on drawing. */
+.excal-canvas-guide {
+  text-align: center;
+  font-family: var(--ui-font);
+  color: var(--chrome-text-muted);
+}
+.excal-canvas-guide h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  margin: 0 0 12px;
+  color: var(--text-primary-color);
+}
+.excal-canvas-guide p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0 0 22px;
+}
+.excal-canvas-guide > div {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  font-size: 11px;
+}
+.excal-canvas-guide > div span {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.excal-canvas-guide kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--sidebar-border-color);
+  border-radius: 5px;
+}
+.excal-canvas-guide small {
+  display: block;
+  margin-top: 26px;
+  font-size: 10px;
+  opacity: 0.8;
 }

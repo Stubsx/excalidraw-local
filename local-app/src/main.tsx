@@ -3,12 +3,14 @@ import { createRoot } from "react-dom/client";
 
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import type { Theme } from "@excalidraw/element/types";
 
 import { Sidebar } from "./components/Sidebar";
 import { TabBar } from "./components/TabBar";
 import { EditorPane } from "./components/EditorPane";
+import { Welcome } from "./components/Welcome";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { installRenderListener } from "./render/ipcListener";
 import { useTabs } from "./tabs";
@@ -61,6 +63,36 @@ function App() {
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   // Settings panel (CLI install, etc.) open state.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const fileDialogOpen = useRef(false);
+  const pickFile = useCallback(async () => {
+    if (fileDialogOpen.current) {
+      return;
+    }
+    fileDialogOpen.current = true;
+    try {
+      const path = await openDialog({
+        multiple: false,
+        title: "打开图稿",
+        filters: [{ name: "Excalidraw 图稿", extensions: ["excalidraw"] }],
+      });
+      if (typeof path === "string") {
+        await openFile(
+          path,
+          path
+            .split("/")
+            .pop()
+            ?.replace(/\.excalidraw$/i, "") ?? "未命名",
+        );
+      }
+    } catch (e) {
+      setError(`打开文件失败：${e}`);
+    } finally {
+      fileDialogOpen.current = false;
+    }
+  }, [openFile, setError]);
 
   // Theme is driven by the editor. Initial guess matches index.html's
   // anti-flash script so the first paint is correct.
@@ -70,19 +102,22 @@ function App() {
       if (stored === "dark" || stored === "light") {
         return stored;
       }
-      if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
-        return "dark";
-      }
     } catch {
       // ignore (SSR / storage disabled)
     }
-    return "light";
+    return "system";
   });
 
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" &&
-      window.matchMedia?.("(prefers-color-scheme: dark)").matches === true);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const isDark = theme === "dark" || (theme === "system" && systemDark);
 
   // Keep <html> in sync too, so the anti-flash background in index.html
   // matches the chrome between boot and editor mount.
@@ -138,6 +173,11 @@ function App() {
   // Editor → chrome theme sync. Excalidraw reports "light" | "dark" | "system".
   const onThemeChange = useCallback((next: Theme | "system") => {
     setTheme(next);
+    try {
+      window.localStorage.setItem("excalidraw-theme", next);
+    } catch {
+      /* Theme still applies for this session. */
+    }
   }, []);
 
   // Stable per-tab onChange: an inline arrow would change identity on every
@@ -182,6 +222,55 @@ function App() {
     };
   }, [prepareExit, setError]);
 
+  const createScene = useCallback(() => {
+    void newTab().then(refreshSidebar);
+  }, [newTab, refreshSidebar]);
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        !bootstrapped ||
+        settingsOpen ||
+        busy ||
+        event.repeat ||
+        event.isComposing ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey
+      ) {
+        return;
+      }
+      // Do not take shortcuts from editor dialogs or text composition.
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      let action: (() => void) | undefined;
+      if (!event.shiftKey && key === "n") {
+        action = createScene;
+      }
+      if (!event.shiftKey && key === "o") {
+        action = () => {
+          void pickFile();
+        };
+      }
+      if (!event.shiftKey && key === ",") {
+        action = openSettings;
+      }
+      if (event.shiftKey && key === "f") {
+        action = () => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        };
+      }
+      if (action) {
+        event.preventDefault();
+        event.stopPropagation();
+        action();
+      }
+    };
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  }, [bootstrapped, settingsOpen, busy, createScene, pickFile, openSettings]);
+
   if (!bootstrapped) {
     return (
       <div
@@ -189,7 +278,7 @@ function App() {
           isDark ? " theme--dark" : ""
         }`}
       >
-        <div style={loadingStyle}>Loading Excalidraw Local…</div>
+        <div style={loadingStyle}>正在准备你的工作台…</div>
       </div>
     );
   }
@@ -205,28 +294,30 @@ function App() {
         }`}
       >
         <div style={appLayoutStyle.root}>
-          <Sidebar
-            onOpenScene={openScene}
-            onOpenFile={openFile}
-            onNew={() => {
-              void newTab().then(refreshSidebar);
-            }}
-            onOpenSettings={() => setSettingsOpen(true)}
-            activeTabId={activeId}
-            refreshKey={sidebarRefresh}
-            onSceneRenamed={renameTab}
-            beforeMutation={flushActive}
-            onSceneDeleted={(id) => closeTab(`library:${id}`)}
-          />
-          <div style={appLayoutStyle.main}>
+          <div className="excal-sidebar-host" inert={settingsOpen}>
+            <Sidebar
+              onOpenScene={openScene}
+              onOpenFile={openFile}
+              onNew={createScene}
+              onPickFile={() => {
+                void pickFile();
+              }}
+              searchRef={searchRef}
+              onOpenSettings={openSettings}
+              activeTabId={activeId}
+              refreshKey={sidebarRefresh}
+              onSceneRenamed={renameTab}
+              beforeMutation={flushActive}
+              onSceneDeleted={(id) => closeTab(`library:${id}`)}
+            />
+          </div>
+          <main style={appLayoutStyle.main} inert={settingsOpen}>
             <TabBar
               tabs={tabs}
               activeId={activeId}
               onSelect={setActiveId}
               onClose={closeTab}
-              onNew={() => {
-                void newTab().then(refreshSidebar);
-              }}
+              onNew={createScene}
             />
             {error && (
               <div className="excal-error-banner" role="alert">
@@ -249,12 +340,15 @@ function App() {
               </div>
             )}
             <div
+              id="editor-panel"
+              role={activeTab ? "tabpanel" : undefined}
+              aria-labelledby={activeTab ? `tab-${activeTab.id}` : undefined}
               inert={busy}
               aria-busy={busy}
               style={appLayoutStyle.editorArea}
             >
               {/* Only mount the active tab's editor; others unmount (data persists). */}
-              {activeTab && (
+              {activeTab ? (
                 <EditorPane
                   key={`${activeTab.id}:${activeTab.revision}`}
                   kind={activeTab.kind}
@@ -265,14 +359,50 @@ function App() {
                   onError={setError}
                   onChange={onEditorChange}
                   onThemeChange={onThemeChange}
+                  theme={isDark ? "dark" : "light"}
+                />
+              ) : (
+                <Welcome
+                  onNew={createScene}
+                  onOpenFile={() => {
+                    void pickFile();
+                  }}
+                  onOpenSettings={openSettings}
                 />
               )}
             </div>
-          </div>
+            {activeTab && (
+              <footer className="excal-editor-status">
+                <span>
+                  {activeTab.kind === "library" ? "资料库" : "磁盘文件"}{" "}
+                  <span className="excal-status-separator">/</span>{" "}
+                  {activeTab.name || "未命名"}
+                </span>
+                <span role="status">
+                  <span
+                    className={`excal-local-dot${
+                      error
+                        ? " excal-local-dot--error"
+                        : activeTab.dirty
+                        ? " excal-local-dot--pending"
+                        : ""
+                    }`}
+                  />
+                  {error
+                    ? "请检查保存状态"
+                    : activeTab.dirty
+                    ? "正在保存…"
+                    : "已保存到本机"}
+                </span>
+              </footer>
+            )}
+          </main>
           {/* Settings drawer overlays the editor area. */}
           <SettingsPanel
             open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
+            onClose={closeSettings}
+            theme={theme}
+            onThemeChange={onThemeChange}
           />
         </div>
       </div>

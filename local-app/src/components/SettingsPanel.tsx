@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
+import type { Theme } from "@excalidraw/element/types";
+
 import { CloseIcon } from "../icons";
 
 interface Target {
@@ -28,9 +30,11 @@ interface Result {
 interface Props {
   open: boolean;
   onClose: () => void;
+  theme: Theme | "system";
+  onThemeChange: (theme: Theme | "system") => void;
 }
 
-export function SettingsPanel({ open, onClose }: Props) {
+export function SettingsPanel({ open, onClose, theme, onThemeChange }: Props) {
   const [status, setStatus] = useState<Status | null>(null);
   const [selected, setSelected] = useState<string[]>(["agents"]);
   const [shell, setShell] = useState("none");
@@ -41,6 +45,8 @@ export function SettingsPanel({ open, onClose }: Props) {
   const panel = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   const refresh = useCallback(async () => {
     const ticket = ++generation.current;
@@ -82,7 +88,7 @@ export function SettingsPanel({ open, onClose }: Props) {
     const keydown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        if (!busy) {
+        if (!busyRef.current) {
           onClose();
         }
       }
@@ -109,7 +115,7 @@ export function SettingsPanel({ open, onClose }: Props) {
       document.removeEventListener("keydown", keydown, true);
       previouslyFocused?.focus();
     };
-  }, [open, onClose, busy]);
+  }, [open, onClose]);
   const install = async () => {
     setBusy(true);
     setError(null);
@@ -150,7 +156,10 @@ export function SettingsPanel({ open, onClose }: Props) {
         aria-labelledby="settings-title"
       >
         <header className="excal-settings-header">
-          <h2 id="settings-title">设置</h2>
+          <div>
+            <h2 id="settings-title">设置</h2>
+            <p>按你的习惯，准备好工作台</p>
+          </div>
           <button
             ref={closeButton}
             className="excal-btn excal-btn--icon excal-btn--ghost"
@@ -162,13 +171,36 @@ export function SettingsPanel({ open, onClose }: Props) {
           </button>
         </header>
         <div className="excal-settings-body">
+          <section className="excal-appearance">
+            <h3>外观</h3>
+            <div
+              className="excal-theme-switch"
+              role="group"
+              aria-label="外观主题"
+            >
+              {(
+                [
+                  ["light", "浅色"],
+                  ["dark", "深色"],
+                  ["system", "跟随系统"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={`excal-btn${
+                    theme === value ? " excal-btn--active" : " excal-btn--ghost"
+                  }`}
+                  aria-pressed={theme === value}
+                  onClick={() => onThemeChange(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
           <section className="excal-skill-intro">
-            <span className="excal-settings-eyebrow">EXCALIDRAW × AI</span>
-            <h3>
-              让你的 AI 助手
-              <br />
-              直接画进本地资料库
-            </h3>
+            <span className="excal-settings-eyebrow">AI 绘图</span>
+            <h3>给 AI 助手装上绘图技能</h3>
             <p>
               把绘图技能安装到常用客户端。用一句话生成流程图、修改已有图稿、导出清晰图片，完成后还能在这里继续编辑。
             </p>
@@ -183,7 +215,7 @@ export function SettingsPanel({ open, onClose }: Props) {
           </section>
           <section className="excal-settings-section">
             <div className="excal-section-title">
-              <h3>1. 选择 AI 客户端</h3>
+              <h3>选择安装位置</h3>
               <button
                 className="excal-btn excal-btn--ghost"
                 disabled={busy || scanning}
@@ -196,7 +228,12 @@ export function SettingsPanel({ open, onClose }: Props) {
               推荐使用通用目录。Kimi
               或需要独立配置的客户端，可单独选择。已有同名技能会先备份。
             </p>
-            <div className="excal-target-list">
+            <div className="excal-target-list" aria-busy={scanning}>
+              {!status && scanning && (
+                <p className="excal-settings-desc" role="status">
+                  正在检测本机客户端…
+                </p>
+              )}
               {status?.targets.map((target) => (
                 <label
                   key={target.id}
@@ -222,7 +259,11 @@ export function SettingsPanel({ open, onClose }: Props) {
                     <strong>{target.name}</strong>
                     <small>{target.path}</small>
                   </span>
-                  <span className="excal-target-state">
+                  <span
+                    className={`excal-target-state${
+                      target.installed ? " excal-target-state--installed" : ""
+                    }`}
+                  >
                     {target.installed
                       ? "已安装"
                       : target.existing
@@ -243,7 +284,7 @@ export function SettingsPanel({ open, onClose }: Props) {
             )}
           </section>
           <section className="excal-settings-section">
-            <h3>2. 终端命令</h3>
+            <h3>终端命令（可选）</h3>
             <p className="excal-settings-desc">
               技能可直接调用 App 自带工具。若也想在终端输入
               excal，请选择你使用的终端环境。
@@ -268,6 +309,8 @@ export function SettingsPanel({ open, onClose }: Props) {
                 : "正在检查内置运行环境…"}
             </div>
           </section>
+        </div>
+        <footer className="excal-settings-footer">
           {error && (
             <div
               className="excal-settings-toast excal-settings-error"
@@ -304,9 +347,10 @@ export function SettingsPanel({ open, onClose }: Props) {
               : `安装到 ${selected.length} 个位置`}
           </button>
           <p className="excal-settings-footnote">
-            Excalidraw Local {status?.version ?? ""} · 安装仅写入你的用户目录
+            Excalidraw Local {status?.version ?? ""} ·
+            自动准备依赖，无需手动安装
           </p>
-        </div>
+        </footer>
       </aside>
     </>
   );

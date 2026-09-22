@@ -1,6 +1,6 @@
 [package]
 name = "excalidraw-local"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first Excalidraw desktop app with file management and Agent CLI"
 authors = ["jabber1"]
 edition = "2021"

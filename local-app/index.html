@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <title>Excalidraw Local</title>
@@ -20,7 +20,7 @@
         const theme = window.localStorage.getItem("excalidraw-theme");
         const isDark =
           theme === "dark" ||
-          (theme === "system" &&
+          ((!theme || theme === "system") &&
             window.matchMedia("(prefers-color-scheme: dark)").matches);
         if (isDark) document.documentElement.classList.add("dark");
       } catch (e) {

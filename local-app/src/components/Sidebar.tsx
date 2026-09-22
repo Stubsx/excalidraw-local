@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  open as openDialog,
+  confirm as confirmDialog,
+} from "@tauri-apps/plugin-dialog";
 
 import {
   queryScenes,
@@ -17,7 +20,6 @@ import {
   type FolderEntry,
 } from "../folderStore";
 
-import { sidebarStyle, COLORS } from "../styles";
 import {
   PlusIcon,
   ImageIcon,
@@ -30,6 +32,9 @@ import {
   SettingsIcon,
   CloseIcon,
   PencilIcon,
+  MoreIcon,
+  WorkspaceIcon,
+  searchIcon as SearchIcon,
 } from "../icons";
 
 import type { FolderHistoryEntry } from "../db/types";
@@ -40,6 +45,8 @@ interface SidebarProps {
   onOpenScene: (sceneId: string) => void;
   onOpenFile: (path: string, name: string) => void;
   onNew: () => void;
+  onPickFile: () => void;
+  searchRef: React.RefObject<HTMLInputElement | null>;
   /** Open the settings panel (CLI install etc.). */
   onOpenSettings: () => void;
   /** Only the current tab (kind:ref encoded) is highlighted. */
@@ -66,6 +73,8 @@ export function Sidebar({
   onOpenScene,
   onOpenFile,
   onNew,
+  onPickFile,
+  searchRef,
   onOpenSettings,
   activeTabId,
   refreshKey,
@@ -120,6 +129,7 @@ export function Sidebar({
     });
     if (request === libraryLoad.current) {
       setItems(rows);
+      setError(null);
     }
   }, [search, starredOnly]);
 
@@ -203,263 +213,321 @@ export function Sidebar({
     );
   }, []);
 
+  const filtered = !!search.trim() || (view === "library" && starredOnly);
+  const resetFilters = () => {
+    setSearch("");
+    setStarredOnly(false);
+  };
+  const selectView = (next: View) => {
+    setView(next);
+    setSearch("");
+    setError(null);
+  };
   return (
-    <div className="excal-sidebar" style={sidebarStyle.container}>
-      {/* View switcher — segmented control, mirrors sidebar-tab-trigger */}
-      <div style={sidebarStyle.viewSwitch}>
+    <aside className="excal-sidebar" aria-label="图稿导航">
+      <div className="excal-brand">
+        <WorkspaceIcon />
+        <span>
+          Excalidraw <strong>Local</strong>
+          <small>想法的本地留白</small>
+        </span>
+      </div>
+      <div className="excal-sidebar-create">
+        <button className="excal-btn excal-btn--primary" onClick={onNew}>
+          <PlusIcon />
+          新建画布<kbd>⌘ N</kbd>
+        </button>
+        <button
+          className="excal-btn excal-btn--icon"
+          onClick={onPickFile}
+          title="打开 .excalidraw 文件（⌘ O）"
+        >
+          <FolderIcon />
+        </button>
+      </div>
+      <div className="excal-view-switch" role="group" aria-label="图稿来源">
         <button
           className={`excal-btn${
-            view === "library" ? " excal-btn--active" : ""
+            view === "library" ? " excal-btn--active" : " excal-btn--ghost"
           }`}
-          onClick={() => setView("library")}
-          style={{ flex: 1, gap: "0.3rem" }}
+          aria-pressed={view === "library"}
+          onClick={() => selectView("library")}
         >
           <LibraryIcon />
           资料库
         </button>
         <button
           className={`excal-btn${
-            view === "folder" ? " excal-btn--active" : ""
+            view === "folder" ? " excal-btn--active" : " excal-btn--ghost"
           }`}
-          onClick={() => setView("folder")}
-          style={{ flex: 1, gap: "0.3rem" }}
+          aria-pressed={view === "folder"}
+          onClick={() => selectView("folder")}
         >
           <FolderIcon />
           文件夹
         </button>
       </div>
-
-      <div style={sidebarStyle.header}>
+      <div className="excal-search">
+        <SearchIcon />
         <input
+          ref={searchRef}
           className="excal-input"
-          style={{ flex: 1 }}
-          placeholder={view === "library" ? "搜索资料库…" : "搜索文件…"}
+          type="search"
+          aria-label={view === "library" ? "搜索资料库" : "搜索文件"}
+          placeholder={view === "library" ? "搜索图稿…" : "搜索文件…"}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setSearch("");
+            }
+          }}
         />
+        {search && (
+          <button
+            className="excal-btn excal-btn--icon excal-btn--ghost"
+            title="清除搜索"
+            onClick={() => {
+              setSearch("");
+              searchRef.current?.focus();
+            }}
+          >
+            <CloseIcon />
+          </button>
+        )}
+      </div>
+      {view === "folder" && (
+        <div className="excal-folder-section">
+          <button
+            className="excal-btn excal-folder-open"
+            onClick={() => {
+              void pickFolder().catch((e) => setError(String(e)));
+            }}
+          >
+            <PlusIcon />
+            添加文件夹
+          </button>
+          {folders.length > 0 && (
+            <div className="excal-folder-switcher">
+              {folders.map((f) => (
+                <div
+                  key={f.path}
+                  className={`excal-folder-chip${
+                    f.path === activeFolderPath
+                      ? " excal-folder-chip--active"
+                      : ""
+                  }`}
+                >
+                  <button
+                    className="excal-folder-select"
+                    title={f.path}
+                    aria-pressed={f.path === activeFolderPath}
+                    onClick={() => switchFolder(f.path)}
+                  >
+                    <FolderIcon />
+                    <span>{f.name}</span>
+                  </button>
+                  <button
+                    className="excal-btn excal-btn--icon excal-btn--ghost"
+                    title={`从历史移除「${f.name}」`}
+                    onClick={() => {
+                      void removeFolder(f.path).catch((e) =>
+                        setError(String(e)),
+                      );
+                    }}
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="excal-list-heading">
+        <span>
+          {search.trim()
+            ? "搜索结果"
+            : view === "folder"
+            ? "文件"
+            : starredOnly
+            ? "我的收藏"
+            : "全部图稿"}
+          <span className="excal-count">
+            {view === "library" ? items.length : folderEntries.length}
+          </span>
+        </span>
         {view === "library" && (
           <button
-            className={`excal-btn excal-btn--icon${
-              starredOnly ? " excal-btn--active" : " excal-btn--ghost"
+            className={`excal-btn excal-btn--ghost excal-filter${
+              starredOnly ? " excal-filter--active" : ""
             }`}
+            aria-pressed={starredOnly}
             title="只看收藏"
             onClick={() => setStarredOnly((s) => !s)}
           >
-            {starredOnly ? <StarFilledIcon /> : <StarIcon />}
+            {starredOnly ? <StarFilledIcon /> : <StarIcon />}收藏
           </button>
         )}
-        <button
-          className="excal-btn excal-btn--icon excal-btn--primary"
-          title="新建"
-          onClick={onNew}
-        >
-          <PlusIcon />
-        </button>
       </div>
-
-      {view === "folder" && (
-        <>
-          <div style={sidebarStyle.folderBar}>
-            <button
-              className="excal-btn"
-              style={{ gap: "0.3rem" }}
-              onClick={() => {
-                void pickFolder().catch((e) => setError(String(e)));
-              }}
-            >
-              <FolderIcon />
-              打开文件夹
-            </button>
-          </div>
-
-          {/* Folder switcher — recent folders as a list, click to switch,
-              × to remove from history (not from disk). */}
-          {folders.length > 0 && (
-            <div className="excal-folder-switcher">
-              {folders.map((f) => {
-                const active = f.path === activeFolderPath;
-                return (
-                  <div
-                    key={f.path}
-                    className={`excal-folder-chip${
-                      active ? " excal-folder-chip--active" : ""
-                    }`}
-                    title={f.path}
-                    onClick={() => switchFolder(f.path)}
-                  >
-                    <span className="excal-folder-chip__icon">
-                      <FolderIcon />
-                    </span>
-                    <span className="excal-folder-chip__name">{f.name}</span>
-                    <button
-                      className="excal-folder-chip__close"
-                      title="从历史移除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFolder(f.path);
-                      }}
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+      {error && (
+        <div className="excal-sidebar-error" role="alert">
+          {error}
+          <button
+            className="excal-btn excal-btn--ghost"
+            onClick={() => {
+              void (
+                view === "library" ? reloadLibrary() : reloadFolder()
+              ).catch((e) => setError(String(e)));
+            }}
+          >
+            重试
+          </button>
+        </div>
       )}
-
-      {error && <div style={sidebarStyle.errorMsg}>{error}</div>}
-
-      <div className="excal-scene-list" style={sidebarStyle.list}>
+      <div
+        className="excal-scene-list"
+        aria-label={view === "library" ? "资料库图稿" : "文件夹图稿"}
+      >
         {view === "library" && items.length === 0 && (
-          <Empty text={search ? "没有匹配的图" : "还没有图,点 + 新建"} />
+          <Empty
+            title={
+              search.trim()
+                ? "没有找到匹配的图稿"
+                : starredOnly
+                ? "还没有收藏"
+                : "第一张图，从这里开始"
+            }
+            text={
+              filtered
+                ? "试试其他关键词，或查看全部图稿。"
+                : "新建画布后，图稿会自动保存在这里。"
+            }
+            action={filtered ? "清除筛选" : "新建画布"}
+            onAction={filtered ? resetFilters : onNew}
+          />
         )}
         {view === "folder" && folderEntries.length === 0 && (
           <Empty
+            title={
+              search.trim()
+                ? "没有找到匹配的文件"
+                : activeFolderPath
+                ? "文件夹里还没有图稿"
+                : "连接你的图稿文件夹"
+            }
             text={
               activeFolderPath
-                ? "该文件夹没有 .excalidraw 文件"
-                : "点上方按钮打开文件夹"
+                ? "支持 .excalidraw 文件，编辑会保存回原文件。"
+                : "选择本机文件夹，在这里浏览和编辑图稿。"
+            }
+            action={search.trim() ? "清除搜索" : "选择文件夹"}
+            onAction={
+              search.trim()
+                ? () => setSearch("")
+                : () => {
+                    void pickFolder().catch((e) => setError(String(e)));
+                  }
             }
           />
         )}
-
         {view === "library" &&
-          items.map((item) => {
-            const tabId = `library:${item.id}`;
-            return (
-              <LibraryItem
-                key={item.id}
-                active={activeTabId === tabId}
-                item={item}
-                onClick={() => onOpenScene(item.id)}
-                onRenamed={reloadLibrary}
-                onSceneRenamed={onSceneRenamed}
-                beforeMutation={beforeMutation}
-                onSceneDeleted={onSceneDeleted}
-                onError={(e) => setError(String(e))}
-              />
-            );
-          })}
-
+          items.map((item) => (
+            <LibraryItem
+              key={item.id}
+              active={activeTabId === `library:${item.id}`}
+              item={item}
+              onClick={() => onOpenScene(item.id)}
+              onRenamed={reloadLibrary}
+              onSceneRenamed={onSceneRenamed}
+              beforeMutation={beforeMutation}
+              onSceneDeleted={onSceneDeleted}
+              onError={(e) => setError(String(e))}
+            />
+          ))}
         {view === "folder" &&
-          folderEntries.map((entry) => {
-            const tabId = `file:${entry.path}`;
-            return (
-              <Item
-                key={entry.path}
-                active={activeTabId === tabId}
+          folderEntries.map((entry) => (
+            <div
+              key={entry.path}
+              className={`excal-row${
+                activeTabId === `file:${entry.path}` ? " excal-row--active" : ""
+              }`}
+            >
+              <button
+                className="excal-row-open"
+                title={entry.path}
+                aria-current={
+                  activeTabId === `file:${entry.path}` ? "page" : undefined
+                }
                 onClick={() => onOpenFile(entry.path, entry.name)}
-                thumb={null}
-                name={entry.name}
-                sub="磁盘文件"
-                actions={null}
-              />
-            );
-          })}
+              >
+                <span className="excal-thumb">
+                  <FileIcon />
+                </span>
+                <span className="excal-row-meta">
+                  <span className="excal-row-name">{entry.name}</span>
+                  <span className="excal-row-time">磁盘文件 · 原位编辑</span>
+                </span>
+              </button>
+            </div>
+          ))}
       </div>
-
-      {/* Footer: settings (CLI install, etc.) */}
-      <div className="excal-sidebar-footer">
-        <button
-          className="excal-btn excal-btn--ghost"
-          style={{ gap: "0.4rem", justifyContent: "flex-start" }}
-          onClick={onOpenSettings}
-        >
+      <footer className="excal-sidebar-footer">
+        <span className="excal-storage-note">
+          <span className="excal-local-dot" />
+          图稿保存在此 Mac
+        </span>
+        <button className="excal-btn excal-btn--ghost" onClick={onOpenSettings}>
           <SettingsIcon />
-          设置
+          设置与 AI 技能<kbd>⌘ ,</kbd>
         </button>
-      </div>
-    </div>
+      </footer>
+    </aside>
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return <div style={sidebarStyle.empty}>{text}</div>;
-}
-
-function Item({
-  active,
-  onClick,
-  thumb,
-  name,
-  sub,
-  actions,
+function Empty({
+  title,
+  text,
+  action,
+  onAction,
 }: {
-  active: boolean;
-  onClick: () => void;
-  /** thumbnail data URL; null = show a file icon; undefined = placeholder */
-  thumb?: string | null;
-  name: string;
-  sub: string;
-  actions: React.ReactNode;
+  title: string;
+  text: string;
+  action: string;
+  onAction: () => void;
 }) {
   return (
-    <div
-      className={`excal-row${active ? " excal-row--active" : ""}`}
-      style={sidebarStyle.item}
-      onClick={onClick}
-    >
-      <div style={sidebarStyle.thumb}>
-        {thumb ? (
-          <img src={thumb} style={sidebarStyle.thumbImg} alt="" />
-        ) : thumb === null ? (
-          <span
-            style={{
-              ...sidebarStyle.thumbPlaceholder,
-              color: COLORS.textMuted,
-            }}
-          >
-            <FileIcon />
-          </span>
-        ) : (
-          <span
-            style={{
-              ...sidebarStyle.thumbPlaceholder,
-              color: COLORS.textMuted,
-            }}
-          >
-            <ImageIcon />
-          </span>
-        )}
-      </div>
-      <div style={sidebarStyle.itemMeta}>
-        <div style={sidebarStyle.itemName}>{name}</div>
-        <div style={sidebarStyle.itemTime}>{sub}</div>
-      </div>
-      {actions && <div style={sidebarStyle.itemActions}>{actions}</div>}
+    <div className="excal-list-empty">
+      <ImageIcon />
+      <strong>{title}</strong>
+      <p>{text}</p>
+      <button className="excal-btn" onClick={onAction}>
+        {action}
+      </button>
     </div>
   );
 }
 
 function relTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
+  const m = Math.max(0, Math.floor((Date.now() - ts) / 60000));
   if (m < 1) {
-    return "刚刚";
+    return "刚刚编辑";
   }
   if (m < 60) {
-    return `${m}分钟前`;
+    return `${m} 分钟前`;
   }
   const h = Math.floor(m / 60);
   if (h < 24) {
-    return `${h}小时前`;
+    return `${h} 小时前`;
   }
   const d = Math.floor(h / 24);
   if (d < 30) {
-    return `${d}天前`;
+    return `${d} 天前`;
   }
-  return new Date(ts).toLocaleDateString();
+  return new Date(ts).toLocaleDateString("zh-CN");
 }
 
-/**
- * A library row with inline rename support.
- *
- * Click the pencil to edit the name in place: the name swaps for an input
- * bound to the same row. Enter / blur commits, Esc cancels. Rename is
- * committed via `renameScene` (already used by the `excal mv --name` CLI).
- */
 function LibraryItem({
   item,
   active,
@@ -474,7 +542,6 @@ function LibraryItem({
   active: boolean;
   onClick: () => void;
   onRenamed: () => void;
-  /** Propagate the rename to open tabs (syncs tab titles). */
   onSceneRenamed: (sceneId: string, newName: string) => void;
   beforeMutation: () => Promise<void>;
   onSceneDeleted: (sceneId: string) => void;
@@ -484,144 +551,245 @@ function LibraryItem({
   const [draft, setDraft] = useState(item.name || "未命名");
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelling = useRef(false);
+  const committing = useRef(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const name = item.name || "未命名";
 
-  // Focus + select when entering edit mode.
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
   }, [editing]);
+  useEffect(() => {
+    if (!menuPosition) {
+      return;
+    }
+    menuRef.current?.querySelector("button")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (
+        !menuRef.current?.contains(event.target as Node) &&
+        !triggerRef.current?.contains(event.target as Node)
+      ) {
+        setMenuPosition(null);
+      }
+    };
+    const scroll = (event: Event) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuPosition(null);
+      }
+    };
+    const resize = () => setMenuPosition(null);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("scroll", scroll, true);
+    window.addEventListener("resize", resize);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", resize);
+    };
+  }, [menuPosition]);
 
-  const commit = useCallback(async () => {
-    if (cancelling.current) {
-      cancelling.current = false;
+  const commit = async () => {
+    if (cancelling.current || committing.current) {
       return;
     }
     const trimmed = draft.trim();
     setEditing(false);
-    // No-op if unchanged or empty.
     if (!trimmed || trimmed === item.name) {
       return;
     }
+    committing.current = true;
     try {
       await beforeMutation();
       await renameScene(item.id, trimmed);
       onRenamed();
-      // Sync any open tab's title (the tab holds its own copy of the name).
       onSceneRenamed(item.id, trimmed);
     } catch (e) {
       onError(e);
-      // Keep the old name on failure
-      setDraft(item.name || "未命名");
+      setDraft(name);
+    } finally {
+      committing.current = false;
     }
-  }, [
-    draft,
-    item.id,
-    item.name,
-    onRenamed,
-    onSceneRenamed,
-    beforeMutation,
-    onError,
-  ]);
-
-  const cancel = useCallback(() => {
-    cancelling.current = true;
-    setDraft(item.name || "未命名");
-    setEditing(false);
-  }, [item.name]);
-
+  };
+  const closeMenu = () => {
+    setMenuPosition(null);
+    triggerRef.current?.focus();
+  };
+  const remove = async () => {
+    closeMenu();
+    try {
+      if (
+        await confirmDialog(`删除「${name}」后，它将从资料库中移除。`, {
+          title: "删除图稿",
+          kind: "warning",
+          okLabel: "删除",
+          cancelLabel: "保留图稿",
+        })
+      ) {
+        await beforeMutation();
+        await deleteScene(item.id);
+        onSceneDeleted(item.id);
+        onRenamed();
+      }
+    } catch (e) {
+      onError(e);
+    }
+  };
   return (
-    <div
-      className={`excal-row${active ? " excal-row--active" : ""}`}
-      style={sidebarStyle.item}
-      onClick={onClick}
-    >
-      <div style={sidebarStyle.thumb}>
-        {item.thumbnail ? (
-          <img src={item.thumbnail} style={sidebarStyle.thumbImg} alt="" />
-        ) : (
-          <span
-            style={{
-              ...sidebarStyle.thumbPlaceholder,
-              color: COLORS.textMuted,
-            }}
-          >
-            <ImageIcon />
-          </span>
-        )}
-      </div>
-      <div style={sidebarStyle.itemMeta}>
-        {editing ? (
+    <div className={`excal-row${active ? " excal-row--active" : ""}`}>
+      {editing ? (
+        <div className="excal-row-rename">
+          <PencilIcon />
           <input
             ref={inputRef}
-            className="excal-input excal-rename-input"
+            className="excal-input"
+            aria-label="图稿名称"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            // Stop the row click from opening the scene while typing.
-            onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) {
+                return;
+              }
               if (e.key === "Enter") {
                 e.preventDefault();
-                commit();
+                void commit();
               } else if (e.key === "Escape") {
                 e.preventDefault();
-                cancel();
+                cancelling.current = true;
+                setEditing(false);
+                triggerRef.current?.focus();
               }
             }}
-            onBlur={commit}
+            onBlur={() => {
+              void commit();
+            }}
           />
-        ) : (
-          <>
-            <div style={sidebarStyle.itemName}>{item.name || "未命名"}</div>
-            <div style={sidebarStyle.itemTime}>{relTime(item.updatedAt)}</div>
-          </>
-        )}
-      </div>
-      <div style={sidebarStyle.itemActions}>
+        </div>
+      ) : (
         <button
-          className="excal-btn excal-btn--icon excal-btn--ghost"
-          title="重命名"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDraft(item.name || "未命名");
-            cancelling.current = false;
-            setEditing(true);
-          }}
+          className="excal-row-open"
+          onClick={onClick}
+          title={name}
+          aria-current={active ? "page" : undefined}
         >
-          <PencilIcon />
+          <span className="excal-thumb">
+            {item.thumbnail ? (
+              <img src={item.thumbnail} alt="" />
+            ) : (
+              <ImageIcon />
+            )}
+          </span>
+          <span className="excal-row-meta">
+            <span className="excal-row-name">{name}</span>
+            <span className="excal-row-time">
+              {item.starred && <StarFilledIcon />}
+              {relTime(item.updatedAt)}
+            </span>
+          </span>
         </button>
-        <button
-          className="excal-btn excal-btn--icon excal-btn--ghost"
-          title={item.starred ? "取消收藏" : "收藏"}
-          onClick={(e) => {
-            e.stopPropagation();
-            void toggleStarred(item.id).then(onRenamed).catch(onError);
-          }}
-          style={{ color: item.starred ? COLORS.star : undefined }}
-        >
-          {item.starred ? <StarFilledIcon /> : <StarIcon />}
-        </button>
-        <button
-          className="excal-btn excal-btn--icon excal-btn--ghost"
-          title="删除"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`删除"${item.name}"?`)) {
-              void beforeMutation()
-                .then(() => deleteScene(item.id))
-                .then(() => {
-                  onSceneDeleted(item.id);
-                  onRenamed();
-                })
-                .catch(onError);
+      )}
+      <button
+        ref={triggerRef}
+        className="excal-btn excal-btn--icon excal-btn--ghost excal-row-more"
+        title={`「${name}」的更多操作`}
+        aria-haspopup="menu"
+        aria-expanded={!!menuPosition}
+        onClick={() => {
+          if (menuPosition) {
+            closeMenu();
+            return;
+          }
+          const rect = triggerRef.current!.getBoundingClientRect();
+          setMenuPosition({
+            left: Math.min(rect.left, window.innerWidth - 178),
+            top: Math.min(rect.bottom + 4, window.innerHeight - 145),
+          });
+        }}
+      >
+        <MoreIcon />
+      </button>
+      {menuPosition && (
+        <div
+          ref={menuRef}
+          className="excal-row-menu"
+          role="menu"
+          aria-label={`${name}的操作`}
+          style={menuPosition}
+          onBlur={(e) => {
+            if (
+              e.relatedTarget &&
+              !e.currentTarget.contains(e.relatedTarget as Node)
+            ) {
+              setMenuPosition(null);
             }
           }}
-          style={{ color: COLORS.danger }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              closeMenu();
+            }
+            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+              e.preventDefault();
+              const buttons = Array.from(
+                e.currentTarget.querySelectorAll("button"),
+              );
+              const current = buttons.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              const next =
+                e.key === "Home"
+                  ? 0
+                  : e.key === "End"
+                  ? buttons.length - 1
+                  : (current +
+                      (e.key === "ArrowDown" ? 1 : -1) +
+                      buttons.length) %
+                    buttons.length;
+              buttons[next]?.focus();
+            }
+          }}
         >
-          <TrashIcon />
-        </button>
-      </div>
+          <button
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              setDraft(name);
+              cancelling.current = false;
+              setEditing(true);
+            }}
+          >
+            <PencilIcon />
+            重命名
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              void toggleStarred(item.id).then(onRenamed).catch(onError);
+            }}
+          >
+            {item.starred ? <StarFilledIcon /> : <StarIcon />}
+            {item.starred ? "取消收藏" : "收藏图稿"}
+          </button>
+          <button
+            role="menuitem"
+            className="excal-danger-action"
+            onClick={() => {
+              void remove();
+            }}
+          >
+            <TrashIcon />
+            删除图稿
+          </button>
+        </div>
+      )}
     </div>
   );
 }

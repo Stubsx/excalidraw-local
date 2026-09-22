@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from "react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, WelcomeScreen } from "@excalidraw/excalidraw";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 import { exportToBlob } from "@excalidraw/utils/export";
 import { getNonDeletedElements } from "@excalidraw/element";
@@ -20,6 +20,7 @@ import type { TabKind } from "../tabs";
 type Snapshot = Pick<SavedScene, "elements" | "appState" | "files">;
 interface Props {
   kind: TabKind;
+  theme: Theme;
   refId: string;
   scene: SavedScene;
   registerFlush: (flush: (() => Promise<void>) | null) => void;
@@ -32,6 +33,7 @@ interface Props {
 export const EditorPane = memo(
   ({
     kind,
+    theme,
     refId,
     scene,
     registerFlush,
@@ -141,6 +143,8 @@ export const EditorPane = memo(
 
     return (
       <Excalidraw
+        langCode="zh-CN"
+        theme={theme}
         onExcalidrawAPI={(value) => {
           api.current = value;
         }}
@@ -156,7 +160,28 @@ export const EditorPane = memo(
         }}
         onChange={handleChange}
         onThemeChange={onThemeChange}
-      />
+      >
+        <WelcomeScreen>
+          <WelcomeScreen.Center>
+            <div className="excal-canvas-guide">
+              <h2>从一个形状开始</h2>
+              <p>选一个工具，或直接拖入图片，把想法留在画布上。</p>
+              <div>
+                <span>
+                  <kbd>R</kbd>矩形
+                </span>
+                <span>
+                  <kbd>T</kbd>文字
+                </span>
+                <span>
+                  <kbd>A</kbd>箭头
+                </span>
+              </div>
+              <small>修改会自动保存，尽管开始。</small>
+            </div>
+          </WelcomeScreen.Center>
+        </WelcomeScreen>
+      </Excalidraw>
     );
   },
 );

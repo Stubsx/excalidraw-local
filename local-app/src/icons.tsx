@@ -94,3 +94,72 @@ export const StarIcon = asComponent(StarIconEl);
 export const StarFilledIcon = asComponent(StarFilledIconEl);
 export const FolderIcon = asComponent(FolderIconEl);
 export const PencilIcon = asComponent(PencilIconEl);
+
+export function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="12" r="1.7" />
+    </svg>
+  );
+}
+
+export function SparkIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6Z" />
+      <path d="m20 2 .6 1.4L22 4l-1.4.6L20 6l-.6-1.4L18 4l1.4-.6Z" />
+    </svg>
+  );
+}
+
+export function ArrowIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14m-5-5 5 5-5 5" />
+    </svg>
+  );
+}
+
+export function WorkspaceIcon() {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect
+        x="4"
+        y="4"
+        width="12"
+        height="12"
+        rx="3"
+        transform="rotate(-5 10 10)"
+      />
+      <path d="M10 20v5h7m-3-3 3 3-3 3" />
+      <rect x="21" y="20" width="8" height="8" rx="2" />
+      <path d="m24 4 5 7-5 7-5-7Z" />
+    </svg>
+  );
+}
