@@ -16,6 +16,7 @@ import { installRenderListener } from "./render/ipcListener";
 import { useTabs } from "./tabs";
 import { getWorkspaceShortcut } from "./shortcuts";
 import { appLayoutStyle } from "./styles";
+import { WorkspaceIcon } from "./icons";
 
 // Excalidraw's CSS variables (colors, fonts, radii) are scoped to `.excalidraw`.
 // Importing chrome.css here adds the button/input/tab recipes that consume
@@ -277,24 +278,23 @@ function App() {
         }`}
       >
         <div style={appLayoutStyle.root}>
-          <div className="excal-sidebar-host" inert={settingsOpen}>
-            <Sidebar
-              onOpenScene={openScene}
-              onOpenFile={openFile}
-              onNew={createScene}
-              onPickFile={() => {
-                void pickFile();
-              }}
-              searchRef={searchRef}
-              onOpenSettings={openSettings}
-              activeTabId={activeId}
-              refreshKey={sidebarRefresh}
-              onSceneRenamed={renameTab}
-              beforeMutation={flushActive}
-              onSceneDeleted={(id) => closeTab(`library:${id}`)}
-            />
-          </div>
-          <main style={appLayoutStyle.main} inert={settingsOpen}>
+          <header
+            className="excal-titlebar"
+            data-tauri-drag-region="deep"
+            inert={settingsOpen}
+          >
+            <div
+              className={`excal-titlebar-brand${
+                navigator.platform.startsWith("Mac")
+                  ? " excal-titlebar-brand--mac"
+                  : ""
+              }`}
+            >
+              <WorkspaceIcon />
+              <span>
+                Excalidraw <strong>Local</strong>
+              </span>
+            </div>
             <TabBar
               tabs={tabs}
               activeId={activeId}
@@ -302,84 +302,105 @@ function App() {
               onClose={closeTab}
               onNew={createScene}
             />
-            {error && (
-              <div className="excal-error-banner" role="alert">
-                {error}
-                <button
-                  className="excal-btn"
-                  onClick={() => {
-                    void flushActive()
-                      .then(() => setError(null))
-                      .catch(() => {});
-                  }}
-                >
-                  重试保存
-                </button>
-              </div>
-            )}
-            {busy && (
-              <div role="status" className="excal-operation-status">
-                正在保存并切换…
-              </div>
-            )}
-            <div
-              id="editor-panel"
-              role={activeTab ? "tabpanel" : undefined}
-              aria-labelledby={activeTab ? `tab-${activeTab.id}` : undefined}
-              inert={busy}
-              aria-busy={busy}
-              style={appLayoutStyle.editorArea}
-            >
-              {/* Only mount the active tab's editor; others unmount (data persists). */}
-              {activeTab ? (
-                <EditorPane
-                  key={`${activeTab.id}:${activeTab.revision}`}
-                  kind={activeTab.kind}
-                  refId={activeTab.refId}
-                  scene={activeTab.scene}
-                  registerFlush={registerFlush}
-                  onSaved={onEditorSaved}
-                  onError={setError}
-                  onChange={onEditorChange}
-                  onThemeChange={onThemeChange}
-                  theme={isDark ? "dark" : "light"}
-                />
-              ) : (
-                <Welcome
-                  onNew={createScene}
-                  onOpenFile={() => {
-                    void pickFile();
-                  }}
-                  onOpenSettings={openSettings}
-                />
-              )}
+          </header>
+          <div style={appLayoutStyle.workspace}>
+            <div className="excal-sidebar-host" inert={settingsOpen}>
+              <Sidebar
+                onOpenScene={openScene}
+                onOpenFile={openFile}
+                onNew={createScene}
+                onPickFile={() => {
+                  void pickFile();
+                }}
+                searchRef={searchRef}
+                onOpenSettings={openSettings}
+                activeTabId={activeId}
+                refreshKey={sidebarRefresh}
+                onSceneRenamed={renameTab}
+                beforeMutation={flushActive}
+                onSceneDeleted={(id) => closeTab(`library:${id}`)}
+              />
             </div>
-            {activeTab && (
-              <footer className="excal-editor-status">
-                <span>
-                  {activeTab.kind === "library" ? "资料库" : "磁盘文件"}{" "}
-                  <span className="excal-status-separator">/</span>{" "}
-                  {activeTab.name || "未命名"}
-                </span>
-                <span role="status">
-                  <span
-                    className={`excal-local-dot${
-                      error
-                        ? " excal-local-dot--error"
-                        : activeTab.dirty
-                        ? " excal-local-dot--pending"
-                        : ""
-                    }`}
+            <main style={appLayoutStyle.main} inert={settingsOpen}>
+              {error && (
+                <div className="excal-error-banner" role="alert">
+                  {error}
+                  <button
+                    className="excal-btn"
+                    onClick={() => {
+                      void flushActive()
+                        .then(() => setError(null))
+                        .catch(() => {});
+                    }}
+                  >
+                    重试保存
+                  </button>
+                </div>
+              )}
+              {busy && (
+                <div role="status" className="excal-operation-status">
+                  正在保存并切换…
+                </div>
+              )}
+              <div
+                id="editor-panel"
+                role={activeTab ? "tabpanel" : undefined}
+                aria-labelledby={activeTab ? `tab-${activeTab.id}` : undefined}
+                inert={busy}
+                aria-busy={busy}
+                style={appLayoutStyle.editorArea}
+              >
+                {/* Only mount the active tab's editor; others unmount (data persists). */}
+                {activeTab ? (
+                  <EditorPane
+                    key={`${activeTab.id}:${activeTab.revision}`}
+                    kind={activeTab.kind}
+                    refId={activeTab.refId}
+                    scene={activeTab.scene}
+                    registerFlush={registerFlush}
+                    onSaved={onEditorSaved}
+                    onError={setError}
+                    onChange={onEditorChange}
+                    onThemeChange={onThemeChange}
+                    theme={isDark ? "dark" : "light"}
                   />
-                  {error
-                    ? "请检查保存状态"
-                    : activeTab.dirty
-                    ? "正在保存…"
-                    : "已保存到本机"}
-                </span>
-              </footer>
-            )}
-          </main>
+                ) : (
+                  <Welcome
+                    onNew={createScene}
+                    onOpenFile={() => {
+                      void pickFile();
+                    }}
+                    onOpenSettings={openSettings}
+                  />
+                )}
+              </div>
+              {activeTab && (
+                <footer className="excal-editor-status">
+                  <span>
+                    {activeTab.kind === "library" ? "资料库" : "磁盘文件"}{" "}
+                    <span className="excal-status-separator">/</span>{" "}
+                    {activeTab.name || "未命名"}
+                  </span>
+                  <span role="status">
+                    <span
+                      className={`excal-local-dot${
+                        error
+                          ? " excal-local-dot--error"
+                          : activeTab.dirty
+                          ? " excal-local-dot--pending"
+                          : ""
+                      }`}
+                    />
+                    {error
+                      ? "请检查保存状态"
+                      : activeTab.dirty
+                      ? "正在保存…"
+                      : "已保存到本机"}
+                  </span>
+                </footer>
+              )}
+            </main>
+          </div>
           {/* Settings drawer overlays the editor area. */}
           <SettingsPanel
             open={settingsOpen}

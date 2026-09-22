@@ -27,7 +27,7 @@ export function TabBar({
   }, [activeId]);
 
   return (
-    <header className="excal-tabbar">
+    <div className="excal-tabbar">
       {tabs.length ? (
         <div
           className="excal-tabs"
@@ -108,6 +108,7 @@ export function TabBar({
       >
         <PlusIcon />
       </button>
-    </header>
+      <div className="excal-titlebar-space" aria-hidden="true" />
+    </div>
   );
 }

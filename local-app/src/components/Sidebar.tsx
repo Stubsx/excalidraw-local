@@ -33,7 +33,6 @@ import {
   CloseIcon,
   PencilIcon,
   MoreIcon,
-  WorkspaceIcon,
   searchIcon as SearchIcon,
 } from "../icons";
 
@@ -225,13 +224,6 @@ export function Sidebar({
   };
   return (
     <aside className="excal-sidebar" aria-label="图稿导航">
-      <div className="excal-brand">
-        <WorkspaceIcon />
-        <span>
-          Excalidraw <strong>Local</strong>
-          <small>想法的本地留白</small>
-        </span>
-      </div>
       <div className="excal-sidebar-create">
         <button className="excal-btn excal-btn--primary" onClick={onNew}>
           <PlusIcon />

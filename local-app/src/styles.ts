@@ -4,6 +4,12 @@ export const appLayoutStyle = {
     display: "flex" as const,
     height: "100%",
     width: "100%",
+    flexDirection: "column" as const,
+  },
+  workspace: {
+    display: "flex" as const,
+    flex: 1,
+    minHeight: 0,
   },
   main: {
     flex: 1,
