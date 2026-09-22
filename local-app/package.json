@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-local",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "type": "module",
   "description": "Local-first Excalidraw desktop app with file management and Agent CLI",
@@ -15,7 +15,8 @@
     "tauri": "tauri",
     "test": "vitest run --config vitest.config.ts",
     "test:cli": "node --test tests/cli*.mjs",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "*",
